@@ -4,6 +4,7 @@ HTTP triggers for document processing with Document Intelligence.
 Supports automatic splitting of multi-page PDFs into 2-page form chunks.
 """
 
+import asyncio
 import json
 import logging
 from datetime import datetime, timezone
@@ -174,6 +175,7 @@ async def process_document(req: func.HttpRequest) -> func.HttpResponse:
             document = {
                 "id": doc_id,
                 "sourceFile": blob_name,
+                "processedPdfUrl": blob_url,  # URL to the original PDF for user review
                 "processedAt": processed_at,
                 "formNumber": 1,
                 "totalForms": 1,
@@ -199,74 +201,80 @@ async def process_document(req: func.HttpRequest) -> func.HttpResponse:
 
         logger.info(f"Split into {total_forms} forms")
 
-        # Process each chunk
-        results: list[dict[str, Any]] = []
-        temp_blobs: list[str] = []  # Track temp blobs for cleanup
+        # Process form chunks in parallel (limit concurrency to avoid rate limits)
+        semaphore = asyncio.Semaphore(3)  # Max 3 concurrent Document Intelligence calls
 
-        for form_num, (chunk_bytes, start_page, end_page) in enumerate(chunks, start=1):
-            # Upload chunk to temp location
-            chunk_blob_name = f"{base_name}_form{form_num}_pages{start_page}-{end_page}.pdf"
-            temp_blob_path = f"_temp/{chunk_blob_name}"
+        async def process_form(
+            form_num: int,
+            chunk_bytes: bytes,
+            start_page: int,
+            end_page: int,
+        ) -> dict[str, Any]:
+            """Process a single form chunk."""
+            async with semaphore:
+                chunk_blob_name = f"{base_name}_form{form_num}_pages{start_page}-{end_page}.pdf"
+                split_blob_path = f"_splits/{chunk_blob_name}"
 
-            logger.info(f"Processing form {form_num}/{total_forms}: pages {start_page}-{end_page}")
+                logger.info(f"Processing form {form_num}/{total_forms}: pages {start_page}-{end_page}")
 
-            try:
-                # Upload temp blob
-                chunk_url = blob_service.upload_blob(
-                    container_name=container_name,
-                    blob_name=temp_blob_path,
-                    content=chunk_bytes,
-                )
-                temp_blobs.append(temp_blob_path)
+                try:
+                    # Upload split PDF (kept permanently for user review)
+                    chunk_url = blob_service.upload_blob(
+                        container_name=container_name,
+                        blob_name=split_blob_path,
+                        content=chunk_bytes,
+                    )
 
-                # Generate SAS and process
-                chunk_sas_url = blob_service.generate_sas_url(chunk_url)
-                analysis_result = await doc_service.analyze_document(
-                    blob_url=chunk_sas_url,
-                    model_id=model_id,
-                    blob_name=f"{blob_name} (form {form_num}, pages {start_page}-{end_page})",
-                )
+                    # Generate SAS and process
+                    chunk_sas_url = blob_service.generate_sas_url(chunk_url)
+                    analysis_result = await doc_service.analyze_document(
+                        blob_url=chunk_sas_url,
+                        model_id=model_id,
+                        blob_name=f"{blob_name} (form {form_num}, pages {start_page}-{end_page})",
+                    )
 
-                # Create document ID for this form
-                doc_id = f"{blob_name.replace('/', '_').replace('.', '_')}_form{form_num}"
+                    # Create document ID for this form
+                    doc_id = f"{blob_name.replace('/', '_').replace('.', '_')}_form{form_num}"
 
-                document = {
-                    "id": doc_id,
-                    "sourceFile": blob_name,  # Partition key - same for all forms from this PDF
-                    "processedAt": processed_at,
-                    "formNumber": form_num,
-                    "totalForms": total_forms,
-                    "pageRange": f"{start_page}-{end_page}",
-                    "originalPageCount": page_count,
-                    **analysis_result,
-                }
+                    document = {
+                        "id": doc_id,
+                        "sourceFile": blob_name,  # Partition key - same for all forms from this PDF
+                        "processedPdfUrl": chunk_url,  # URL to the split PDF for user review
+                        "processedAt": processed_at,
+                        "formNumber": form_num,
+                        "totalForms": total_forms,
+                        "pageRange": f"{start_page}-{end_page}",
+                        "originalPageCount": page_count,
+                        **analysis_result,
+                    }
 
-                await cosmos_service.save_document_result(document)
+                    await cosmos_service.save_document_result(document)
 
-                results.append({
-                    "formNumber": form_num,
-                    "documentId": doc_id,
-                    "pageRange": f"{start_page}-{end_page}",
-                    "status": "success",
-                })
+                    logger.info(f"Successfully processed form {form_num}")
+                    return {
+                        "formNumber": form_num,
+                        "documentId": doc_id,
+                        "pageRange": f"{start_page}-{end_page}",
+                        "status": "success",
+                    }
 
-                logger.info(f"Successfully processed form {form_num}")
+                except (DocumentProcessingError, RateLimitError) as e:
+                    logger.error(f"Failed to process form {form_num}: {e}")
+                    return {
+                        "formNumber": form_num,
+                        "pageRange": f"{start_page}-{end_page}",
+                        "status": "failed",
+                        "error": str(e),
+                    }
 
-            except (DocumentProcessingError, RateLimitError) as e:
-                logger.error(f"Failed to process form {form_num}: {e}")
-                results.append({
-                    "formNumber": form_num,
-                    "pageRange": f"{start_page}-{end_page}",
-                    "status": "failed",
-                    "error": str(e),
-                })
+        # Create tasks for all forms
+        tasks = [
+            process_form(form_num, chunk_bytes, start_page, end_page)
+            for form_num, (chunk_bytes, start_page, end_page) in enumerate(chunks, start=1)
+        ]
 
-        # Cleanup temp blobs
-        for temp_blob in temp_blobs:
-            try:
-                blob_service.delete_blob(container_name, temp_blob)
-            except Exception as e:
-                logger.warning(f"Failed to delete temp blob {temp_blob}: {e}")
+        # Process all forms in parallel (limited by semaphore)
+        results = await asyncio.gather(*tasks)
 
         # Count successes
         successful = sum(1 for r in results if r["status"] == "success")

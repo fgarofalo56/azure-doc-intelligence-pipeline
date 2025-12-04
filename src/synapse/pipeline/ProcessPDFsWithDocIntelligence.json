@@ -84,7 +84,7 @@
             "type": "Expression"
           },
           "isSequential": false,
-          "batchCount": 10,
+          "batchCount": 3,
           "activities": [
             {
               "name": "ProcessDocument",

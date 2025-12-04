@@ -5,7 +5,7 @@ Generates SAS tokens to allow Document Intelligence to access private blobs.
 
 import logging
 from datetime import datetime, timedelta, timezone
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 
 from azure.storage.blob import BlobSasPermissions, BlobServiceClient, generate_blob_sas
 
@@ -80,7 +80,8 @@ class BlobService:
                 raise BlobServiceError(f"Invalid blob URL path: {parsed.path}")
 
             container_name = path_parts[0]
-            blob_name = path_parts[1]
+            # URL-decode the blob name to handle spaces (%20) and special chars
+            blob_name = unquote(path_parts[1])
 
             logger.debug(
                 f"Generating SAS for account={account_name}, "
@@ -159,7 +160,8 @@ class BlobService:
                 raise BlobServiceError(f"Invalid blob URL path: {parsed.path}")
 
             container_name = path_parts[0]
-            blob_name = path_parts[1]
+            # URL-decode the blob name to handle spaces (%20) and special chars
+            blob_name = unquote(path_parts[1])
 
             logger.info(f"Downloading blob: {container_name}/{blob_name}")
 
@@ -245,7 +247,7 @@ class BlobService:
             blob_url: Full blob URL.
 
         Returns:
-            tuple: (container_name, blob_name)
+            tuple: (container_name, blob_name) - blob_name is URL-decoded
 
         Raises:
             BlobServiceError: If URL is invalid.
@@ -257,7 +259,8 @@ class BlobService:
             if len(path_parts) < 2:
                 raise BlobServiceError(f"Invalid blob URL path: {parsed.path}")
 
-            return path_parts[0], path_parts[1]
+            # URL-decode the blob name to handle spaces (%20) and special chars
+            return path_parts[0], unquote(path_parts[1])
 
         except BlobServiceError:
             raise

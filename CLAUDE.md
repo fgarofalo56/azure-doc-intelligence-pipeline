@@ -127,10 +127,18 @@ cd src/functions && func azure functionapp publish <function-app-name> --python
 ## Project Overview
 
 Automated document processing pipeline that:
-1. Extracts data from PDFs using **Azure Document Intelligence** custom models
-2. Orchestrates processing via **Azure Synapse Analytics**
-3. Persists extracted data to **Azure Cosmos DB**
-4. Deploys infrastructure via **Bicep**
+1. **Splits multi-page PDFs** into 2-page form chunks automatically
+2. **Extracts data** from PDFs using **Azure Document Intelligence** custom models
+3. **Processes forms in parallel** with rate-limit aware concurrency
+4. **Orchestrates processing** via **Azure Synapse Analytics**
+5. **Persists extracted data** to **Azure Cosmos DB** with PDF source links
+6. **Deploys infrastructure** via **Bicep**
+
+### Key Features
+- 🔄 **Auto PDF Splitting**: Multi-page PDFs split into 2-page forms
+- ⚡ **Parallel Processing**: 3 concurrent Document Intelligence calls
+- 📎 **PDF Archive**: Split PDFs stored in `_splits/` for review
+- 🔗 **Source Linking**: Each Cosmos DB record links to its processed PDF
 
 **Core Principles**: KISS, YAGNI, DRY, Infrastructure as Code, Fail Fast, Idempotency
 
@@ -196,9 +204,13 @@ azure-doc-intel-pipeline/
 │   └── Deploy-SynapseArtifacts.ps1      # Synapse artifact deployment
 ├── src/
 │   ├── functions/                 # Azure Functions
-│   │   ├── function_app.py        # Entry point
+│   │   ├── function_app.py        # Entry point (PDF splitting, parallel processing)
 │   │   ├── config.py              # Configuration management
-│   │   ├── services/              # Business logic (document_service, cosmos_service, blob_service)
+│   │   ├── services/              # Business logic
+│   │   │   ├── document_service.py    # Document Intelligence integration
+│   │   │   ├── cosmos_service.py      # Cosmos DB operations
+│   │   │   ├── blob_service.py        # Blob storage & SAS tokens
+│   │   │   └── pdf_service.py         # PDF splitting with pypdf
 │   │   └── requirements.txt
 │   └── synapse/                   # Synapse artifacts (singular names)
 │       ├── pipeline/              # Pipeline definitions
@@ -210,6 +222,12 @@ azure-doc-intel-pipeline/
 │   ├── unit/
 │   ├── integration/
 │   └── fixtures/
+├── docs/                          # Project documentation
+│   ├── README.md                  # Documentation index
+│   ├── DOCUMENTATION-STANDARDS.md # Visual & writing guidelines
+│   ├── guides/                    # How-to guides
+│   ├── azure-services/            # Azure service docs
+│   └── diagrams/                  # Excalidraw architecture diagrams
 └── PRPs/                          # Product Requirement Prompts
 ```
 
@@ -264,9 +282,14 @@ output storageAccountName string = storage.outputs.name
 
 ```json
 {
-    "id": "folder_document_pdf",
-    "sourceFile": "folder/document.pdf",    // Partition key
+    "id": "folder_document_pdf_form1",
+    "sourceFile": "folder/document.pdf",    // Partition key (original PDF)
+    "processedPdfUrl": "https://storage.blob.../_splits/document_form1_pages1-2.pdf",
     "processedAt": "2024-01-15T10:30:00Z",
+    "formNumber": 1,                        // Which form in the PDF (1-indexed)
+    "totalForms": 3,                        // Total forms extracted from PDF
+    "pageRange": "1-2",                     // Pages in original PDF
+    "originalPageCount": 6,                 // Total pages in original PDF
     "modelId": "custom-model-v1",
     "modelConfidence": 0.95,
     "docType": "invoice",
