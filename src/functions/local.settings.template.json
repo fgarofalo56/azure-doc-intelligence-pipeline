@@ -1,0 +1,26 @@
+{
+  "IsEncrypted": false,
+  "Values": {
+    "FUNCTIONS_WORKER_RUNTIME": "python",
+    "FUNCTIONS_EXTENSION_VERSION": "~4",
+    "AzureWebJobsStorage": "<REPLACE_WITH_STORAGE_CONNECTION_STRING>",
+
+    "DOC_INTEL_ENDPOINT": "<REPLACE_WITH_DOCUMENT_INTELLIGENCE_ENDPOINT>",
+    "DOC_INTEL_API_KEY": "<REPLACE_WITH_API_KEY_OR_KEY_VAULT_REFERENCE>",
+
+    "COSMOS_ENDPOINT": "<REPLACE_WITH_COSMOS_DB_ENDPOINT>",
+    "COSMOS_DATABASE": "DocumentsDB",
+    "COSMOS_CONTAINER": "ExtractedDocuments",
+
+    "KEY_VAULT_NAME": "<REPLACE_WITH_KEY_VAULT_NAME>",
+
+    "MAX_CONCURRENT_REQUESTS": "10",
+    "DEFAULT_MODEL_ID": "prebuilt-layout",
+    "FUNCTION_TIMEOUT": "230",
+    "LOG_LEVEL": "INFO"
+  },
+  "Host": {
+    "CORS": "*",
+    "LocalHttpPort": 7071
+  }
+}

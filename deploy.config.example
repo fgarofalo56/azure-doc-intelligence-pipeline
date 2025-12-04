@@ -1,0 +1,66 @@
+# =============================================================================
+# DEPLOYMENT CONFIGURATION
+# =============================================================================
+# Copy this file to deploy.config and fill in your values.
+# This file is used by deployment scripts and CI/CD pipelines.
+#
+# Usage:
+#   cp deploy.config.example deploy.config
+#   source deploy.config  # Load variables into shell
+#   ./scripts/deploy.sh   # Or use variables in your deployment commands
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# AZURE SUBSCRIPTION
+# -----------------------------------------------------------------------------
+# Find your subscription ID:
+#   az account list --output table
+#   az account show --query id --output tsv
+
+AZURE_SUBSCRIPTION_ID="<YOUR_SUBSCRIPTION_ID>"
+AZURE_SUBSCRIPTION_NAME="<YOUR_SUBSCRIPTION_NAME>"
+
+# -----------------------------------------------------------------------------
+# RESOURCE GROUP
+# -----------------------------------------------------------------------------
+# The resource group where resources will be deployed
+# Will be created if it doesn't exist
+
+RESOURCE_GROUP_NAME="rg-docprocessing-dev"
+AZURE_LOCATION="eastus"
+
+# -----------------------------------------------------------------------------
+# DEPLOYMENT ENVIRONMENT
+# -----------------------------------------------------------------------------
+# dev | prod
+
+ENVIRONMENT="dev"
+
+# -----------------------------------------------------------------------------
+# DEPLOYMENT MODE
+# -----------------------------------------------------------------------------
+# new      - Deploy all resources from scratch
+# existing - Use existing Azure resources
+
+DEPLOYMENT_MODE="new"
+
+# -----------------------------------------------------------------------------
+# FUNCTION APP (for existing mode or code deployment)
+# -----------------------------------------------------------------------------
+# Name of Function App for code deployment
+
+FUNCTION_APP_NAME=""
+
+# -----------------------------------------------------------------------------
+# SYNAPSE (optional)
+# -----------------------------------------------------------------------------
+# Synapse workspace name for pipeline deployment
+
+SYNAPSE_WORKSPACE_NAME=""
+
+# -----------------------------------------------------------------------------
+# SECRETS (DO NOT COMMIT!)
+# -----------------------------------------------------------------------------
+# These should be passed as parameters or stored in Key Vault
+
+# SQL_ADMIN_PASSWORD="<SECURE_PASSWORD>"

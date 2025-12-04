@@ -1,0 +1,86 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "resourceGroupName": {
+      "value": "rg-docprocessing-functions-dev"
+    },
+    "location": {
+      "value": "eastus"
+    },
+    "deploymentMode": {
+      "value": "existing"
+    },
+    "prefix": {
+      "value": "docproc"
+    },
+    "environment": {
+      "value": "dev"
+    },
+    "tags": {
+      "value": {
+        "project": "document-processing",
+        "environment": "dev",
+        "deployedBy": "bicep",
+        "deploymentType": "existing-backend"
+      }
+    },
+    "existingStorageAccountName": {
+      "value": "yourstorageaccount"
+    },
+    "existingStorageAccountResourceGroup": {
+      "value": "rg-your-storage-rg"
+    },
+    "existingDocIntelName": {
+      "value": "your-doc-intel"
+    },
+    "existingDocIntelResourceGroup": {
+      "value": "rg-your-docintel-rg"
+    },
+    "existingCosmosAccountName": {
+      "value": "your-cosmos-account"
+    },
+    "existingCosmosAccountResourceGroup": {
+      "value": "rg-your-cosmos-rg"
+    },
+    "cosmosDatabase": {
+      "value": "DocumentsDB"
+    },
+    "cosmosContainer": {
+      "value": "ExtractedDocuments"
+    },
+    "existingKeyVaultName": {
+      "value": "your-keyvault"
+    },
+    "existingKeyVaultResourceGroup": {
+      "value": "rg-your-keyvault-rg"
+    },
+    "existingFunctionAppName": {
+      "value": ""
+    },
+    "deployFunctionApp": {
+      "value": true
+    },
+    "appServicePlanSku": {
+      "value": "S1"
+    },
+    "existingSynapseWorkspaceName": {
+      "value": ""
+    },
+    "existingSynapseResourceGroup": {
+      "value": ""
+    },
+    "enableDiagnostics": {
+      "value": true
+    },
+    "existingLogAnalyticsWorkspaceName": {
+      "value": "your-log-analytics-workspace"
+    },
+    "existingLogAnalyticsResourceGroup": {
+      "value": "rg-your-monitoring-rg"
+    },
+    "enableSynapseGitHubIntegration": {
+      "value": false
+    }
+  }
+}

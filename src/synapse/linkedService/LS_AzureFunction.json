@@ -1,0 +1,22 @@
+{
+  "name": "LS_AzureFunction",
+  "type": "Microsoft.Synapse/workspaces/linkedservices",
+  "properties": {
+    "description": "Azure Function linked service for document processing",
+    "annotations": [
+      "document-processing"
+    ],
+    "type": "AzureFunction",
+    "typeProperties": {
+      "functionAppUrl": "<REPLACE_WITH_FUNCTION_APP_URL>",
+      "functionKey": {
+        "type": "AzureKeyVaultSecret",
+        "store": {
+          "referenceName": "LS_KeyVault",
+          "type": "LinkedServiceReference"
+        },
+        "secretName": "FunctionAppHostKey"
+      }
+    }
+  }
+}

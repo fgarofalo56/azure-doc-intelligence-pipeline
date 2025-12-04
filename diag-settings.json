@@ -1,0 +1,1 @@
+{"properties":{"logs":[{"categoryGroup":"audit","enabled":true},{"categoryGroup":"allLogs","enabled":true}],"metrics":[{"enabled":false,"category":"AllMetrics"}],"workspaceId":"/subscriptions/a60a2fdd-c133-4845-9beb-31f470bf3ef5/resourcegroups/rg-alz-dev-logging/providers/microsoft.operationalinsights/workspaces/alz-dev-dataobservability-loganalyticsworkspace"}}

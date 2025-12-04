@@ -1,0 +1,3521 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#",
+  "languageVersion": "2.0",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.39.26.7824",
+      "templateHash": "1030839305428959965"
+    }
+  },
+  "definitions": {
+    "tagsType": {
+      "type": "object",
+      "properties": {
+        "project": {
+          "type": "string",
+          "nullable": true,
+          "metadata": {
+            "description": "Project name for resource organization"
+          }
+        },
+        "environment": {
+          "type": "string",
+          "nullable": true,
+          "metadata": {
+            "description": "Environment identifier (dev, prod)"
+          }
+        },
+        "deployedBy": {
+          "type": "string",
+          "nullable": true,
+          "metadata": {
+            "description": "Deployment method identifier"
+          }
+        },
+        "costCenter": {
+          "type": "string",
+          "nullable": true,
+          "metadata": {
+            "description": "Cost center for billing allocation"
+          }
+        }
+      },
+      "additionalProperties": {
+        "type": "string",
+        "metadata": {
+          "description": "Additional custom tags"
+        }
+      },
+      "metadata": {
+        "description": "Tags type definition for consistent tagging across resources"
+      }
+    }
+  },
+  "parameters": {
+    "resourceGroupName": {
+      "type": "string",
+      "metadata": {
+        "description": "Resource group name for deployment"
+      }
+    },
+    "location": {
+      "type": "string",
+      "defaultValue": "eastus",
+      "metadata": {
+        "description": "Azure region for deployment"
+      }
+    },
+    "deploymentMode": {
+      "type": "string",
+      "defaultValue": "new",
+      "allowedValues": [
+        "new",
+        "existing"
+      ],
+      "metadata": {
+        "description": "Deployment mode: \"new\" deploys all resources, \"existing\" references pre-deployed resources"
+      }
+    },
+    "prefix": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 10,
+      "metadata": {
+        "description": "Prefix for resource naming (3-10 lowercase chars)"
+      }
+    },
+    "environment": {
+      "type": "string",
+      "defaultValue": "dev",
+      "allowedValues": [
+        "dev",
+        "prod"
+      ],
+      "metadata": {
+        "description": "Environment name"
+      }
+    },
+    "tags": {
+      "$ref": "#/definitions/tagsType",
+      "defaultValue": {
+        "project": "document-processing",
+        "environment": "[parameters('environment')]",
+        "deployedBy": "bicep"
+      },
+      "metadata": {
+        "description": "Tags to apply to all resources"
+      }
+    },
+    "sqlAdministratorPassword": {
+      "type": "securestring",
+      "defaultValue": "",
+      "metadata": {
+        "description": "SQL administrator password for Synapse workspace"
+      }
+    },
+    "existingStorageAccountName": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Name of existing storage account (required for existing mode)"
+      }
+    },
+    "existingStorageAccountResourceGroup": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Resource group of existing storage account"
+      }
+    },
+    "existingDocIntelName": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Name of existing Document Intelligence resource (required for existing mode)"
+      }
+    },
+    "existingDocIntelResourceGroup": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Resource group of existing Document Intelligence"
+      }
+    },
+    "existingCosmosAccountName": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Name of existing Cosmos DB account (required for existing mode)"
+      }
+    },
+    "existingCosmosAccountResourceGroup": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Resource group of existing Cosmos DB account"
+      }
+    },
+    "existingKeyVaultName": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Name of existing Key Vault (required for existing mode)"
+      }
+    },
+    "existingKeyVaultResourceGroup": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Resource group of existing Key Vault"
+      }
+    },
+    "existingFunctionAppName": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Name of existing Function App (leave empty to deploy new)"
+      }
+    },
+    "existingFunctionAppResourceGroup": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Resource group of existing Function App"
+      }
+    },
+    "existingSynapseWorkspaceName": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Name of existing Synapse workspace (leave empty to deploy new or skip)"
+      }
+    },
+    "existingSynapseResourceGroup": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Resource group of existing Synapse workspace"
+      }
+    },
+    "deployFunctionApp": {
+      "type": "bool",
+      "defaultValue": true,
+      "metadata": {
+        "description": "Deploy new Function App (set false if using existing or code-only deployment)"
+      }
+    },
+    "appServicePlanSku": {
+      "type": "string",
+      "defaultValue": "Y1",
+      "allowedValues": [
+        "Y1",
+        "B1",
+        "B2",
+        "S1",
+        "P1v2",
+        "EP1"
+      ],
+      "metadata": {
+        "description": "App Service Plan SKU. Use B1/S1 if you get Dynamic VM quota errors."
+      }
+    },
+    "cosmosDatabase": {
+      "type": "string",
+      "defaultValue": "DocumentsDB",
+      "metadata": {
+        "description": "Cosmos DB database name"
+      }
+    },
+    "cosmosContainer": {
+      "type": "string",
+      "defaultValue": "ExtractedDocuments",
+      "metadata": {
+        "description": "Cosmos DB container name"
+      }
+    },
+    "enableDiagnostics": {
+      "type": "bool",
+      "defaultValue": true,
+      "metadata": {
+        "description": "Enable diagnostic settings for all resources"
+      }
+    },
+    "existingLogAnalyticsWorkspaceName": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Name of existing Log Analytics workspace (leave empty to deploy new)"
+      }
+    },
+    "existingLogAnalyticsResourceGroup": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Resource group of existing Log Analytics workspace"
+      }
+    },
+    "existingLogAnalyticsSubscriptionId": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Subscription ID of existing Log Analytics workspace (for cross-subscription)"
+      }
+    },
+    "logAnalyticsRetentionDays": {
+      "type": "int",
+      "defaultValue": 30,
+      "minValue": 30,
+      "maxValue": 730,
+      "metadata": {
+        "description": "Log Analytics workspace retention in days (for new workspace)"
+      }
+    },
+    "logAnalyticsSku": {
+      "type": "string",
+      "defaultValue": "PerGB2018",
+      "allowedValues": [
+        "Free",
+        "PerGB2018",
+        "PerNode",
+        "Premium",
+        "Standalone",
+        "Standard"
+      ],
+      "metadata": {
+        "description": "Log Analytics workspace SKU (for new workspace)"
+      }
+    },
+    "enableSynapseGitHubIntegration": {
+      "type": "bool",
+      "defaultValue": false,
+      "metadata": {
+        "description": "Enable GitHub integration for Synapse workspace"
+      }
+    },
+    "synapseGitHubAccountName": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "GitHub account name (organization or user)"
+      }
+    },
+    "synapseGitHubRepositoryName": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "GitHub repository name for Synapse artifacts"
+      }
+    },
+    "synapseGitHubCollaborationBranch": {
+      "type": "string",
+      "defaultValue": "main",
+      "metadata": {
+        "description": "GitHub collaboration branch"
+      }
+    },
+    "synapseGitHubRootFolder": {
+      "type": "string",
+      "defaultValue": "/src/synapse",
+      "metadata": {
+        "description": "Root folder in repository for Synapse artifacts"
+      }
+    },
+    "synapseGitHubType": {
+      "type": "string",
+      "defaultValue": "GitHub",
+      "allowedValues": [
+        "GitHub",
+        "GitHubEnterprise"
+      ],
+      "metadata": {
+        "description": "GitHub type"
+      }
+    },
+    "synapseGitHubHostName": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "GitHub Enterprise host URL (only for GitHubEnterprise)"
+      }
+    }
+  },
+  "variables": {
+    "shouldDeployFunctionApp": "[and(parameters('deployFunctionApp'), equals(parameters('existingFunctionAppName'), ''))]",
+    "effectiveStorageRg": "[if(not(equals(parameters('existingStorageAccountResourceGroup'), '')), parameters('existingStorageAccountResourceGroup'), parameters('resourceGroupName'))]",
+    "effectiveDocIntelRg": "[if(not(equals(parameters('existingDocIntelResourceGroup'), '')), parameters('existingDocIntelResourceGroup'), parameters('resourceGroupName'))]",
+    "effectiveCosmosRg": "[if(not(equals(parameters('existingCosmosAccountResourceGroup'), '')), parameters('existingCosmosAccountResourceGroup'), parameters('resourceGroupName'))]",
+    "effectiveKeyVaultRg": "[if(not(equals(parameters('existingKeyVaultResourceGroup'), '')), parameters('existingKeyVaultResourceGroup'), parameters('resourceGroupName'))]",
+    "effectiveFunctionAppRg": "[if(not(equals(parameters('existingFunctionAppResourceGroup'), '')), parameters('existingFunctionAppResourceGroup'), parameters('resourceGroupName'))]",
+    "effectiveSynapseRg": "[if(not(equals(parameters('existingSynapseResourceGroup'), '')), parameters('existingSynapseResourceGroup'), parameters('resourceGroupName'))]",
+    "effectiveLogAnalyticsRg": "[if(not(equals(parameters('existingLogAnalyticsResourceGroup'), '')), parameters('existingLogAnalyticsResourceGroup'), parameters('resourceGroupName'))]",
+    "effectiveLogAnalyticsSubId": "[if(not(equals(parameters('existingLogAnalyticsSubscriptionId'), '')), parameters('existingLogAnalyticsSubscriptionId'), subscription().subscriptionId)]",
+    "isLogAnalyticsCrossSubscription": "[and(not(equals(parameters('existingLogAnalyticsSubscriptionId'), '')), not(equals(parameters('existingLogAnalyticsSubscriptionId'), subscription().subscriptionId)))]"
+  },
+  "resources": {
+    "rg": {
+      "type": "Microsoft.Resources/resourceGroups",
+      "apiVersion": "2024-03-01",
+      "name": "[parameters('resourceGroupName')]",
+      "location": "[parameters('location')]",
+      "tags": "[parameters('tags')]"
+    },
+    "existingLogAnalyticsSameSub": {
+      "condition": "[and(and(parameters('enableDiagnostics'), not(equals(parameters('existingLogAnalyticsWorkspaceName'), ''))), not(variables('isLogAnalyticsCrossSubscription')))]",
+      "existing": true,
+      "type": "Microsoft.OperationalInsights/workspaces",
+      "apiVersion": "2023-09-01",
+      "resourceGroup": "[variables('effectiveLogAnalyticsRg')]",
+      "name": "[parameters('existingLogAnalyticsWorkspaceName')]"
+    },
+    "existingLogAnalyticsCrossSub": {
+      "condition": "[and(and(parameters('enableDiagnostics'), not(equals(parameters('existingLogAnalyticsWorkspaceName'), ''))), variables('isLogAnalyticsCrossSubscription'))]",
+      "existing": true,
+      "type": "Microsoft.OperationalInsights/workspaces",
+      "apiVersion": "2023-09-01",
+      "subscriptionId": "[variables('effectiveLogAnalyticsSubId')]",
+      "resourceGroup": "[variables('effectiveLogAnalyticsRg')]",
+      "name": "[parameters('existingLogAnalyticsWorkspaceName')]"
+    },
+    "existingStorage": {
+      "condition": "[equals(parameters('deploymentMode'), 'existing')]",
+      "existing": true,
+      "type": "Microsoft.Storage/storageAccounts",
+      "apiVersion": "2024-01-01",
+      "resourceGroup": "[variables('effectiveStorageRg')]",
+      "name": "[parameters('existingStorageAccountName')]"
+    },
+    "existingDocIntel": {
+      "condition": "[equals(parameters('deploymentMode'), 'existing')]",
+      "existing": true,
+      "type": "Microsoft.CognitiveServices/accounts",
+      "apiVersion": "2024-10-01",
+      "resourceGroup": "[variables('effectiveDocIntelRg')]",
+      "name": "[parameters('existingDocIntelName')]"
+    },
+    "existingCosmos": {
+      "condition": "[equals(parameters('deploymentMode'), 'existing')]",
+      "existing": true,
+      "type": "Microsoft.DocumentDB/databaseAccounts",
+      "apiVersion": "2024-11-15",
+      "resourceGroup": "[variables('effectiveCosmosRg')]",
+      "name": "[parameters('existingCosmosAccountName')]"
+    },
+    "existingKeyVault": {
+      "condition": "[equals(parameters('deploymentMode'), 'existing')]",
+      "existing": true,
+      "type": "Microsoft.KeyVault/vaults",
+      "apiVersion": "2024-11-01",
+      "resourceGroup": "[variables('effectiveKeyVaultRg')]",
+      "name": "[parameters('existingKeyVaultName')]"
+    },
+    "existingFunctionApp": {
+      "condition": "[and(equals(parameters('deploymentMode'), 'existing'), not(equals(parameters('existingFunctionAppName'), '')))]",
+      "existing": true,
+      "type": "Microsoft.Web/sites",
+      "apiVersion": "2024-04-01",
+      "resourceGroup": "[variables('effectiveFunctionAppRg')]",
+      "name": "[parameters('existingFunctionAppName')]"
+    },
+    "existingSynapse": {
+      "condition": "[and(equals(parameters('deploymentMode'), 'existing'), not(equals(parameters('existingSynapseWorkspaceName'), '')))]",
+      "existing": true,
+      "type": "Microsoft.Synapse/workspaces",
+      "apiVersion": "2021-06-01",
+      "resourceGroup": "[variables('effectiveSynapseRg')]",
+      "name": "[parameters('existingSynapseWorkspaceName')]"
+    },
+    "logAnalyticsNew": {
+      "condition": "[and(parameters('enableDiagnostics'), equals(parameters('existingLogAnalyticsWorkspaceName'), ''))]",
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "log-analytics-deployment",
+      "resourceGroup": "[parameters('resourceGroupName')]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "prefix": {
+            "value": "[parameters('prefix')]"
+          },
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "environment": {
+            "value": "[parameters('environment')]"
+          },
+          "tags": {
+            "value": "[parameters('tags')]"
+          },
+          "retentionInDays": {
+            "value": "[parameters('logAnalyticsRetentionDays')]"
+          },
+          "sku": {
+            "value": "[parameters('logAnalyticsSku')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.39.26.7824",
+              "templateHash": "12902428654670494357"
+            }
+          },
+          "parameters": {
+            "prefix": {
+              "type": "string",
+              "metadata": {
+                "description": "Prefix for resource naming"
+              }
+            },
+            "location": {
+              "type": "string",
+              "defaultValue": "[resourceGroup().location]",
+              "metadata": {
+                "description": "Azure region for deployment"
+              }
+            },
+            "environment": {
+              "type": "string",
+              "metadata": {
+                "description": "Environment name (dev, prod)"
+              }
+            },
+            "tags": {
+              "type": "object",
+              "defaultValue": {},
+              "metadata": {
+                "description": "Tags to apply to resources"
+              }
+            },
+            "retentionInDays": {
+              "type": "int",
+              "defaultValue": 30,
+              "minValue": 30,
+              "maxValue": 730,
+              "metadata": {
+                "description": "Log Analytics workspace retention in days"
+              }
+            },
+            "sku": {
+              "type": "string",
+              "defaultValue": "PerGB2018",
+              "allowedValues": [
+                "Free",
+                "PerGB2018",
+                "PerNode",
+                "Premium",
+                "Standalone",
+                "Standard"
+              ],
+              "metadata": {
+                "description": "Log Analytics workspace SKU"
+              }
+            }
+          },
+          "variables": {
+            "workspaceName": "[format('{0}-law-{1}', parameters('prefix'), parameters('environment'))]"
+          },
+          "resources": [
+            {
+              "type": "Microsoft.OperationalInsights/workspaces",
+              "apiVersion": "2023-09-01",
+              "name": "[variables('workspaceName')]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "properties": {
+                "sku": {
+                  "name": "[parameters('sku')]"
+                },
+                "retentionInDays": "[parameters('retentionInDays')]",
+                "features": {
+                  "enableLogAccessUsingOnlyResourcePermissions": true
+                },
+                "workspaceCapping": {
+                  "dailyQuotaGb": "[if(equals(parameters('environment'), 'dev'), 1, -1)]"
+                },
+                "publicNetworkAccessForIngestion": "Enabled",
+                "publicNetworkAccessForQuery": "Enabled"
+              }
+            }
+          ],
+          "outputs": {
+            "name": {
+              "type": "string",
+              "metadata": {
+                "description": "Log Analytics workspace name"
+              },
+              "value": "[variables('workspaceName')]"
+            },
+            "resourceId": {
+              "type": "string",
+              "metadata": {
+                "description": "Log Analytics workspace resource ID"
+              },
+              "value": "[resourceId('Microsoft.OperationalInsights/workspaces', variables('workspaceName'))]"
+            },
+            "workspaceId": {
+              "type": "string",
+              "metadata": {
+                "description": "Log Analytics workspace ID (for diagnostic settings)"
+              },
+              "value": "[resourceId('Microsoft.OperationalInsights/workspaces', variables('workspaceName'))]"
+            },
+            "customerId": {
+              "type": "string",
+              "metadata": {
+                "description": "Log Analytics workspace customer ID (workspace GUID)"
+              },
+              "value": "[reference(resourceId('Microsoft.OperationalInsights/workspaces', variables('workspaceName')), '2023-09-01').customerId]"
+            },
+            "primarySharedKey": {
+              "type": "string",
+              "metadata": {
+                "description": "Log Analytics workspace primary shared key"
+              },
+              "value": "[listKeys(resourceId('Microsoft.OperationalInsights/workspaces', variables('workspaceName')), '2023-09-01').primarySharedKey]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "rg"
+      ]
+    },
+    "storageNew": {
+      "condition": "[equals(parameters('deploymentMode'), 'new')]",
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "storage-deployment",
+      "resourceGroup": "[parameters('resourceGroupName')]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "prefix": {
+            "value": "[parameters('prefix')]"
+          },
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "environment": {
+            "value": "[parameters('environment')]"
+          },
+          "tags": {
+            "value": "[parameters('tags')]"
+          },
+          "logAnalyticsWorkspaceId": "[if(not(parameters('enableDiagnostics')), createObject('value', ''), if(equals(parameters('existingLogAnalyticsWorkspaceName'), ''), createObject('value', reference('logAnalyticsNew').outputs.workspaceId.value), if(variables('isLogAnalyticsCrossSubscription'), createObject('value', extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', variables('effectiveLogAnalyticsSubId'), variables('effectiveLogAnalyticsRg')), 'Microsoft.OperationalInsights/workspaces', parameters('existingLogAnalyticsWorkspaceName'))), createObject('value', extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('effectiveLogAnalyticsRg')), 'Microsoft.OperationalInsights/workspaces', parameters('existingLogAnalyticsWorkspaceName'))))))]",
+          "enableDiagnostics": {
+            "value": "[parameters('enableDiagnostics')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.39.26.7824",
+              "templateHash": "10110080980174419006"
+            }
+          },
+          "parameters": {
+            "prefix": {
+              "type": "string",
+              "metadata": {
+                "description": "Prefix for resource naming"
+              }
+            },
+            "location": {
+              "type": "string",
+              "defaultValue": "[resourceGroup().location]",
+              "metadata": {
+                "description": "Azure region for deployment"
+              }
+            },
+            "environment": {
+              "type": "string",
+              "metadata": {
+                "description": "Environment name (dev, prod)"
+              }
+            },
+            "tags": {
+              "type": "object",
+              "defaultValue": {},
+              "metadata": {
+                "description": "Tags to apply to resources"
+              }
+            },
+            "logAnalyticsWorkspaceId": {
+              "type": "string",
+              "defaultValue": "",
+              "metadata": {
+                "description": "Log Analytics workspace ID for diagnostic settings (optional)"
+              }
+            },
+            "enableDiagnostics": {
+              "type": "bool",
+              "defaultValue": true,
+              "metadata": {
+                "description": "Enable diagnostic settings"
+              }
+            }
+          },
+          "variables": {
+            "storageAccountName": "[toLower(format('{0}st{1}', parameters('prefix'), uniqueString(resourceGroup().id)))]"
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Storage/storageAccounts",
+              "apiVersion": "2024-01-01",
+              "name": "[variables('storageAccountName')]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "kind": "StorageV2",
+              "sku": {
+                "name": "[if(equals(parameters('environment'), 'prod'), 'Standard_GRS', 'Standard_LRS')]"
+              },
+              "properties": {
+                "accessTier": "Hot",
+                "allowBlobPublicAccess": false,
+                "minimumTlsVersion": "TLS1_2",
+                "supportsHttpsTrafficOnly": true,
+                "networkAcls": {
+                  "defaultAction": "Allow",
+                  "bypass": "AzureServices"
+                },
+                "encryption": {
+                  "services": {
+                    "blob": {
+                      "enabled": true,
+                      "keyType": "Account"
+                    },
+                    "file": {
+                      "enabled": true,
+                      "keyType": "Account"
+                    }
+                  },
+                  "keySource": "Microsoft.Storage"
+                }
+              }
+            },
+            {
+              "type": "Microsoft.Storage/storageAccounts/blobServices",
+              "apiVersion": "2024-01-01",
+              "name": "[format('{0}/{1}', variables('storageAccountName'), 'default')]",
+              "properties": {
+                "deleteRetentionPolicy": {
+                  "enabled": true,
+                  "days": 7
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Storage/storageAccounts/blobServices/containers",
+              "apiVersion": "2024-01-01",
+              "name": "[format('{0}/{1}/{2}', variables('storageAccountName'), 'default', 'pdfs')]",
+              "properties": {
+                "publicAccess": "None"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts/blobServices', variables('storageAccountName'), 'default')]"
+              ]
+            },
+            {
+              "type": "Microsoft.Storage/storageAccounts/blobServices/containers",
+              "apiVersion": "2024-01-01",
+              "name": "[format('{0}/{1}/{2}', variables('storageAccountName'), 'default', 'staging')]",
+              "properties": {
+                "publicAccess": "None"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts/blobServices', variables('storageAccountName'), 'default')]"
+              ]
+            },
+            {
+              "type": "Microsoft.Storage/storageAccounts/blobServices/containers",
+              "apiVersion": "2024-01-01",
+              "name": "[format('{0}/{1}/{2}', variables('storageAccountName'), 'default', 'processed')]",
+              "properties": {
+                "publicAccess": "None"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts/blobServices', variables('storageAccountName'), 'default')]"
+              ]
+            },
+            {
+              "condition": "[and(parameters('enableDiagnostics'), not(equals(parameters('logAnalyticsWorkspaceId'), '')))]",
+              "type": "Microsoft.Insights/diagnosticSettings",
+              "apiVersion": "2021-05-01-preview",
+              "scope": "[format('Microsoft.Storage/storageAccounts/{0}', variables('storageAccountName'))]",
+              "name": "[format('{0}-diagnostics', variables('storageAccountName'))]",
+              "properties": {
+                "workspaceId": "[parameters('logAnalyticsWorkspaceId')]",
+                "metrics": [
+                  {
+                    "category": "Transaction",
+                    "enabled": true,
+                    "retentionPolicy": {
+                      "enabled": false,
+                      "days": 0
+                    }
+                  },
+                  {
+                    "category": "Capacity",
+                    "enabled": true,
+                    "retentionPolicy": {
+                      "enabled": false,
+                      "days": 0
+                    }
+                  }
+                ]
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName'))]"
+              ]
+            },
+            {
+              "condition": "[and(parameters('enableDiagnostics'), not(equals(parameters('logAnalyticsWorkspaceId'), '')))]",
+              "type": "Microsoft.Insights/diagnosticSettings",
+              "apiVersion": "2021-05-01-preview",
+              "scope": "[format('Microsoft.Storage/storageAccounts/{0}/blobServices/{1}', variables('storageAccountName'), 'default')]",
+              "name": "[format('{0}-blob-diagnostics', variables('storageAccountName'))]",
+              "properties": {
+                "workspaceId": "[parameters('logAnalyticsWorkspaceId')]",
+                "logs": [
+                  {
+                    "category": "StorageRead",
+                    "enabled": true,
+                    "retentionPolicy": {
+                      "enabled": false,
+                      "days": 0
+                    }
+                  },
+                  {
+                    "category": "StorageWrite",
+                    "enabled": true,
+                    "retentionPolicy": {
+                      "enabled": false,
+                      "days": 0
+                    }
+                  },
+                  {
+                    "category": "StorageDelete",
+                    "enabled": true,
+                    "retentionPolicy": {
+                      "enabled": false,
+                      "days": 0
+                    }
+                  }
+                ],
+                "metrics": [
+                  {
+                    "category": "Transaction",
+                    "enabled": true,
+                    "retentionPolicy": {
+                      "enabled": false,
+                      "days": 0
+                    }
+                  },
+                  {
+                    "category": "Capacity",
+                    "enabled": true,
+                    "retentionPolicy": {
+                      "enabled": false,
+                      "days": 0
+                    }
+                  }
+                ]
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts/blobServices', variables('storageAccountName'), 'default')]",
+                "[resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName'))]"
+              ]
+            }
+          ],
+          "outputs": {
+            "name": {
+              "type": "string",
+              "metadata": {
+                "description": "Storage account name"
+              },
+              "value": "[variables('storageAccountName')]"
+            },
+            "resourceId": {
+              "type": "string",
+              "metadata": {
+                "description": "Storage account resource ID"
+              },
+              "value": "[resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName'))]"
+            },
+            "primaryBlobEndpoint": {
+              "type": "string",
+              "metadata": {
+                "description": "Storage account primary blob endpoint"
+              },
+              "value": "[reference(resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName')), '2024-01-01').primaryEndpoints.blob]"
+            },
+            "connectionString": {
+              "type": "string",
+              "metadata": {
+                "description": "Storage account connection string"
+              },
+              "value": "[format('DefaultEndpointsProtocol=https;AccountName={0};EndpointSuffix={1};AccountKey={2}', variables('storageAccountName'), environment().suffixes.storage, listKeys(resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName')), '2024-01-01').keys[0].value)]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "logAnalyticsNew",
+        "rg"
+      ]
+    },
+    "docIntelNew": {
+      "condition": "[equals(parameters('deploymentMode'), 'new')]",
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "document-intelligence-deployment",
+      "resourceGroup": "[parameters('resourceGroupName')]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "prefix": {
+            "value": "[parameters('prefix')]"
+          },
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "environment": {
+            "value": "[parameters('environment')]"
+          },
+          "tags": {
+            "value": "[parameters('tags')]"
+          },
+          "logAnalyticsWorkspaceId": "[if(not(parameters('enableDiagnostics')), createObject('value', ''), if(equals(parameters('existingLogAnalyticsWorkspaceName'), ''), createObject('value', reference('logAnalyticsNew').outputs.workspaceId.value), if(variables('isLogAnalyticsCrossSubscription'), createObject('value', extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', variables('effectiveLogAnalyticsSubId'), variables('effectiveLogAnalyticsRg')), 'Microsoft.OperationalInsights/workspaces', parameters('existingLogAnalyticsWorkspaceName'))), createObject('value', extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('effectiveLogAnalyticsRg')), 'Microsoft.OperationalInsights/workspaces', parameters('existingLogAnalyticsWorkspaceName'))))))]",
+          "enableDiagnostics": {
+            "value": "[parameters('enableDiagnostics')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.39.26.7824",
+              "templateHash": "10168948966015386365"
+            }
+          },
+          "parameters": {
+            "prefix": {
+              "type": "string",
+              "metadata": {
+                "description": "Prefix for resource naming"
+              }
+            },
+            "location": {
+              "type": "string",
+              "defaultValue": "[resourceGroup().location]",
+              "metadata": {
+                "description": "Azure region for deployment"
+              }
+            },
+            "environment": {
+              "type": "string",
+              "metadata": {
+                "description": "Environment name (dev, prod)"
+              }
+            },
+            "tags": {
+              "type": "object",
+              "defaultValue": {},
+              "metadata": {
+                "description": "Tags to apply to resources"
+              }
+            },
+            "logAnalyticsWorkspaceId": {
+              "type": "string",
+              "defaultValue": "",
+              "metadata": {
+                "description": "Log Analytics workspace ID for diagnostic settings (optional)"
+              }
+            },
+            "enableDiagnostics": {
+              "type": "bool",
+              "defaultValue": true,
+              "metadata": {
+                "description": "Enable diagnostic settings"
+              }
+            }
+          },
+          "variables": {
+            "documentIntelligenceName": "[format('{0}-di-{1}', parameters('prefix'), parameters('environment'))]"
+          },
+          "resources": [
+            {
+              "type": "Microsoft.CognitiveServices/accounts",
+              "apiVersion": "2024-10-01",
+              "name": "[variables('documentIntelligenceName')]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "kind": "FormRecognizer",
+              "sku": {
+                "name": "[if(equals(parameters('environment'), 'prod'), 'S0', 'F0')]"
+              },
+              "identity": {
+                "type": "SystemAssigned"
+              },
+              "properties": {
+                "customSubDomainName": "[variables('documentIntelligenceName')]",
+                "publicNetworkAccess": "Enabled",
+                "networkAcls": {
+                  "defaultAction": "Allow"
+                },
+                "disableLocalAuth": false
+              }
+            },
+            {
+              "condition": "[and(parameters('enableDiagnostics'), not(equals(parameters('logAnalyticsWorkspaceId'), '')))]",
+              "type": "Microsoft.Insights/diagnosticSettings",
+              "apiVersion": "2021-05-01-preview",
+              "scope": "[format('Microsoft.CognitiveServices/accounts/{0}', variables('documentIntelligenceName'))]",
+              "name": "[format('{0}-diagnostics', variables('documentIntelligenceName'))]",
+              "properties": {
+                "workspaceId": "[parameters('logAnalyticsWorkspaceId')]",
+                "logs": [
+                  {
+                    "category": "Audit",
+                    "enabled": true,
+                    "retentionPolicy": {
+                      "enabled": false,
+                      "days": 0
+                    }
+                  },
+                  {
+                    "category": "RequestResponse",
+                    "enabled": true,
+                    "retentionPolicy": {
+                      "enabled": false,
+                      "days": 0
+                    }
+                  },
+                  {
+                    "category": "Trace",
+                    "enabled": true,
+                    "retentionPolicy": {
+                      "enabled": false,
+                      "days": 0
+                    }
+                  }
+                ],
+                "metrics": [
+                  {
+                    "category": "AllMetrics",
+                    "enabled": true,
+                    "retentionPolicy": {
+                      "enabled": false,
+                      "days": 0
+                    }
+                  }
+                ]
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.CognitiveServices/accounts', variables('documentIntelligenceName'))]"
+              ]
+            }
+          ],
+          "outputs": {
+            "endpoint": {
+              "type": "string",
+              "metadata": {
+                "description": "Document Intelligence endpoint"
+              },
+              "value": "[reference(resourceId('Microsoft.CognitiveServices/accounts', variables('documentIntelligenceName')), '2024-10-01').endpoint]"
+            },
+            "resourceId": {
+              "type": "string",
+              "metadata": {
+                "description": "Document Intelligence resource ID"
+              },
+              "value": "[resourceId('Microsoft.CognitiveServices/accounts', variables('documentIntelligenceName'))]"
+            },
+            "name": {
+              "type": "string",
+              "metadata": {
+                "description": "Document Intelligence resource name"
+              },
+              "value": "[variables('documentIntelligenceName')]"
+            },
+            "principalId": {
+              "type": "string",
+              "metadata": {
+                "description": "Document Intelligence principal ID for managed identity"
+              },
+              "value": "[reference(resourceId('Microsoft.CognitiveServices/accounts', variables('documentIntelligenceName')), '2024-10-01', 'full').identity.principalId]"
+            },
+            "apiKey": {
+              "type": "string",
+              "metadata": {
+                "description": "Document Intelligence API key"
+              },
+              "value": "[listKeys(resourceId('Microsoft.CognitiveServices/accounts', variables('documentIntelligenceName')), '2024-10-01').key1]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "logAnalyticsNew",
+        "rg"
+      ]
+    },
+    "cosmosNew": {
+      "condition": "[equals(parameters('deploymentMode'), 'new')]",
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "cosmos-db-deployment",
+      "resourceGroup": "[parameters('resourceGroupName')]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "prefix": {
+            "value": "[parameters('prefix')]"
+          },
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "environment": {
+            "value": "[parameters('environment')]"
+          },
+          "tags": {
+            "value": "[parameters('tags')]"
+          },
+          "databaseName": {
+            "value": "[parameters('cosmosDatabase')]"
+          },
+          "containerName": {
+            "value": "[parameters('cosmosContainer')]"
+          },
+          "logAnalyticsWorkspaceId": "[if(not(parameters('enableDiagnostics')), createObject('value', ''), if(equals(parameters('existingLogAnalyticsWorkspaceName'), ''), createObject('value', reference('logAnalyticsNew').outputs.workspaceId.value), if(variables('isLogAnalyticsCrossSubscription'), createObject('value', extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', variables('effectiveLogAnalyticsSubId'), variables('effectiveLogAnalyticsRg')), 'Microsoft.OperationalInsights/workspaces', parameters('existingLogAnalyticsWorkspaceName'))), createObject('value', extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('effectiveLogAnalyticsRg')), 'Microsoft.OperationalInsights/workspaces', parameters('existingLogAnalyticsWorkspaceName'))))))]",
+          "enableDiagnostics": {
+            "value": "[parameters('enableDiagnostics')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.39.26.7824",
+              "templateHash": "3488513204278848843"
+            }
+          },
+          "parameters": {
+            "prefix": {
+              "type": "string",
+              "metadata": {
+                "description": "Prefix for resource naming"
+              }
+            },
+            "location": {
+              "type": "string",
+              "defaultValue": "[resourceGroup().location]",
+              "metadata": {
+                "description": "Azure region for deployment"
+              }
+            },
+            "environment": {
+              "type": "string",
+              "metadata": {
+                "description": "Environment name (dev, prod)"
+              }
+            },
+            "tags": {
+              "type": "object",
+              "defaultValue": {},
+              "metadata": {
+                "description": "Tags to apply to resources"
+              }
+            },
+            "databaseName": {
+              "type": "string",
+              "defaultValue": "DocumentsDB",
+              "metadata": {
+                "description": "Database name"
+              }
+            },
+            "containerName": {
+              "type": "string",
+              "defaultValue": "ExtractedDocuments",
+              "metadata": {
+                "description": "Container name"
+              }
+            },
+            "logAnalyticsWorkspaceId": {
+              "type": "string",
+              "defaultValue": "",
+              "metadata": {
+                "description": "Log Analytics workspace ID for diagnostic settings (optional)"
+              }
+            },
+            "enableDiagnostics": {
+              "type": "bool",
+              "defaultValue": true,
+              "metadata": {
+                "description": "Enable diagnostic settings"
+              }
+            }
+          },
+          "variables": {
+            "cosmosAccountName": "[format('{0}-cosmos-{1}', parameters('prefix'), parameters('environment'))]"
+          },
+          "resources": [
+            {
+              "type": "Microsoft.DocumentDB/databaseAccounts",
+              "apiVersion": "2024-11-15",
+              "name": "[variables('cosmosAccountName')]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "kind": "GlobalDocumentDB",
+              "identity": {
+                "type": "SystemAssigned"
+              },
+              "properties": {
+                "databaseAccountOfferType": "Standard",
+                "enableFreeTier": "[equals(parameters('environment'), 'dev')]",
+                "capabilities": [
+                  {
+                    "name": "EnableServerless"
+                  }
+                ],
+                "locations": [
+                  {
+                    "locationName": "[parameters('location')]",
+                    "failoverPriority": 0,
+                    "isZoneRedundant": false
+                  }
+                ],
+                "consistencyPolicy": {
+                  "defaultConsistencyLevel": "Session"
+                },
+                "publicNetworkAccess": "Enabled",
+                "enableAutomaticFailover": false,
+                "enableMultipleWriteLocations": false,
+                "disableLocalAuth": false,
+                "minimalTlsVersion": "Tls12"
+              }
+            },
+            {
+              "type": "Microsoft.DocumentDB/databaseAccounts/sqlDatabases",
+              "apiVersion": "2024-11-15",
+              "name": "[format('{0}/{1}', variables('cosmosAccountName'), parameters('databaseName'))]",
+              "properties": {
+                "resource": {
+                  "id": "[parameters('databaseName')]"
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.DocumentDB/databaseAccounts', variables('cosmosAccountName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers",
+              "apiVersion": "2024-11-15",
+              "name": "[format('{0}/{1}/{2}', variables('cosmosAccountName'), parameters('databaseName'), parameters('containerName'))]",
+              "properties": {
+                "resource": {
+                  "id": "[parameters('containerName')]",
+                  "partitionKey": {
+                    "paths": [
+                      "/sourceFile"
+                    ],
+                    "kind": "Hash",
+                    "version": 2
+                  },
+                  "indexingPolicy": {
+                    "indexingMode": "consistent",
+                    "automatic": true,
+                    "includedPaths": [
+                      {
+                        "path": "/*"
+                      }
+                    ],
+                    "excludedPaths": [
+                      {
+                        "path": "/\"_etag\"/?"
+                      }
+                    ]
+                  },
+                  "defaultTtl": -1
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.DocumentDB/databaseAccounts/sqlDatabases', variables('cosmosAccountName'), parameters('databaseName'))]"
+              ]
+            },
+            {
+              "condition": "[and(parameters('enableDiagnostics'), not(equals(parameters('logAnalyticsWorkspaceId'), '')))]",
+              "type": "Microsoft.Insights/diagnosticSettings",
+              "apiVersion": "2021-05-01-preview",
+              "scope": "[format('Microsoft.DocumentDB/databaseAccounts/{0}', variables('cosmosAccountName'))]",
+              "name": "[format('{0}-diagnostics', variables('cosmosAccountName'))]",
+              "properties": {
+                "workspaceId": "[parameters('logAnalyticsWorkspaceId')]",
+                "logs": [
+                  {
+                    "category": "DataPlaneRequests",
+                    "enabled": true,
+                    "retentionPolicy": {
+                      "enabled": false,
+                      "days": 0
+                    }
+                  },
+                  {
+                    "category": "QueryRuntimeStatistics",
+                    "enabled": true,
+                    "retentionPolicy": {
+                      "enabled": false,
+                      "days": 0
+                    }
+                  },
+                  {
+                    "category": "PartitionKeyStatistics",
+                    "enabled": true,
+                    "retentionPolicy": {
+                      "enabled": false,
+                      "days": 0
+                    }
+                  },
+                  {
+                    "category": "PartitionKeyRUConsumption",
+                    "enabled": true,
+                    "retentionPolicy": {
+                      "enabled": false,
+                      "days": 0
+                    }
+                  },
+                  {
+                    "category": "ControlPlaneRequests",
+                    "enabled": true,
+                    "retentionPolicy": {
+                      "enabled": false,
+                      "days": 0
+                    }
+                  }
+                ],
+                "metrics": [
+                  {
+                    "category": "Requests",
+                    "enabled": true,
+                    "retentionPolicy": {
+                      "enabled": false,
+                      "days": 0
+                    }
+                  }
+                ]
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.DocumentDB/databaseAccounts', variables('cosmosAccountName'))]"
+              ]
+            }
+          ],
+          "outputs": {
+            "endpoint": {
+              "type": "string",
+              "metadata": {
+                "description": "Cosmos DB account endpoint"
+              },
+              "value": "[reference(resourceId('Microsoft.DocumentDB/databaseAccounts', variables('cosmosAccountName')), '2024-11-15').documentEndpoint]"
+            },
+            "resourceId": {
+              "type": "string",
+              "metadata": {
+                "description": "Cosmos DB account resource ID"
+              },
+              "value": "[resourceId('Microsoft.DocumentDB/databaseAccounts', variables('cosmosAccountName'))]"
+            },
+            "name": {
+              "type": "string",
+              "metadata": {
+                "description": "Cosmos DB account name"
+              },
+              "value": "[variables('cosmosAccountName')]"
+            },
+            "databaseName": {
+              "type": "string",
+              "metadata": {
+                "description": "Cosmos DB database name"
+              },
+              "value": "[parameters('databaseName')]"
+            },
+            "containerName": {
+              "type": "string",
+              "metadata": {
+                "description": "Cosmos DB container name"
+              },
+              "value": "[parameters('containerName')]"
+            },
+            "principalId": {
+              "type": "string",
+              "metadata": {
+                "description": "Cosmos DB principal ID for managed identity"
+              },
+              "value": "[reference(resourceId('Microsoft.DocumentDB/databaseAccounts', variables('cosmosAccountName')), '2024-11-15', 'full').identity.principalId]"
+            },
+            "connectionString": {
+              "type": "string",
+              "metadata": {
+                "description": "Cosmos DB primary connection string"
+              },
+              "value": "[listConnectionStrings(resourceId('Microsoft.DocumentDB/databaseAccounts', variables('cosmosAccountName')), '2024-11-15').connectionStrings[0].connectionString]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "logAnalyticsNew",
+        "rg"
+      ]
+    },
+    "keyVaultNew": {
+      "condition": "[equals(parameters('deploymentMode'), 'new')]",
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "key-vault-deployment",
+      "resourceGroup": "[parameters('resourceGroupName')]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "prefix": {
+            "value": "[parameters('prefix')]"
+          },
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "environment": {
+            "value": "[parameters('environment')]"
+          },
+          "tags": {
+            "value": "[parameters('tags')]"
+          },
+          "logAnalyticsWorkspaceId": "[if(not(parameters('enableDiagnostics')), createObject('value', ''), if(equals(parameters('existingLogAnalyticsWorkspaceName'), ''), createObject('value', reference('logAnalyticsNew').outputs.workspaceId.value), if(variables('isLogAnalyticsCrossSubscription'), createObject('value', extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', variables('effectiveLogAnalyticsSubId'), variables('effectiveLogAnalyticsRg')), 'Microsoft.OperationalInsights/workspaces', parameters('existingLogAnalyticsWorkspaceName'))), createObject('value', extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('effectiveLogAnalyticsRg')), 'Microsoft.OperationalInsights/workspaces', parameters('existingLogAnalyticsWorkspaceName'))))))]",
+          "enableDiagnostics": {
+            "value": "[parameters('enableDiagnostics')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.39.26.7824",
+              "templateHash": "9541781916713486191"
+            }
+          },
+          "parameters": {
+            "prefix": {
+              "type": "string",
+              "metadata": {
+                "description": "Prefix for resource naming"
+              }
+            },
+            "location": {
+              "type": "string",
+              "defaultValue": "[resourceGroup().location]",
+              "metadata": {
+                "description": "Azure region for deployment"
+              }
+            },
+            "environment": {
+              "type": "string",
+              "metadata": {
+                "description": "Environment name (dev, prod)"
+              }
+            },
+            "tags": {
+              "type": "object",
+              "defaultValue": {},
+              "metadata": {
+                "description": "Tags to apply to resources"
+              }
+            },
+            "storageConnectionString": {
+              "type": "securestring",
+              "defaultValue": "",
+              "metadata": {
+                "description": "Storage account connection string to store as secret"
+              }
+            },
+            "docIntelApiKey": {
+              "type": "securestring",
+              "defaultValue": "",
+              "metadata": {
+                "description": "Document Intelligence API key to store as secret"
+              }
+            },
+            "cosmosConnectionString": {
+              "type": "securestring",
+              "defaultValue": "",
+              "metadata": {
+                "description": "Cosmos DB connection string to store as secret"
+              }
+            },
+            "logAnalyticsWorkspaceId": {
+              "type": "string",
+              "defaultValue": "",
+              "metadata": {
+                "description": "Log Analytics workspace ID for diagnostic settings (optional)"
+              }
+            },
+            "enableDiagnostics": {
+              "type": "bool",
+              "defaultValue": true,
+              "metadata": {
+                "description": "Enable diagnostic settings"
+              }
+            }
+          },
+          "variables": {
+            "keyVaultName": "[format('{0}-kv-{1}', parameters('prefix'), parameters('environment'))]",
+            "hasStorageSecret": "[not(equals(parameters('storageConnectionString'), ''))]",
+            "hasDocIntelSecret": "[not(equals(parameters('docIntelApiKey'), ''))]",
+            "hasCosmosSecret": "[not(equals(parameters('cosmosConnectionString'), ''))]"
+          },
+          "resources": [
+            {
+              "type": "Microsoft.KeyVault/vaults",
+              "apiVersion": "2024-11-01",
+              "name": "[variables('keyVaultName')]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "properties": {
+                "sku": {
+                  "family": "A",
+                  "name": "standard"
+                },
+                "tenantId": "[subscription().tenantId]",
+                "enableRbacAuthorization": true,
+                "enableSoftDelete": true,
+                "softDeleteRetentionInDays": 90,
+                "enablePurgeProtection": "[equals(parameters('environment'), 'prod')]",
+                "publicNetworkAccess": "Enabled",
+                "networkAcls": {
+                  "defaultAction": "Allow",
+                  "bypass": "AzureServices"
+                }
+              }
+            },
+            {
+              "condition": "[not(equals(parameters('storageConnectionString'), ''))]",
+              "type": "Microsoft.KeyVault/vaults/secrets",
+              "apiVersion": "2024-11-01",
+              "name": "[format('{0}/{1}', variables('keyVaultName'), 'storage-connection-string')]",
+              "properties": {
+                "value": "[parameters('storageConnectionString')]"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.KeyVault/vaults', variables('keyVaultName'))]"
+              ]
+            },
+            {
+              "condition": "[not(equals(parameters('docIntelApiKey'), ''))]",
+              "type": "Microsoft.KeyVault/vaults/secrets",
+              "apiVersion": "2024-11-01",
+              "name": "[format('{0}/{1}', variables('keyVaultName'), 'doc-intel-api-key')]",
+              "properties": {
+                "value": "[parameters('docIntelApiKey')]"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.KeyVault/vaults', variables('keyVaultName'))]"
+              ]
+            },
+            {
+              "condition": "[not(equals(parameters('cosmosConnectionString'), ''))]",
+              "type": "Microsoft.KeyVault/vaults/secrets",
+              "apiVersion": "2024-11-01",
+              "name": "[format('{0}/{1}', variables('keyVaultName'), 'cosmos-connection-string')]",
+              "properties": {
+                "value": "[parameters('cosmosConnectionString')]"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.KeyVault/vaults', variables('keyVaultName'))]"
+              ]
+            },
+            {
+              "condition": "[and(parameters('enableDiagnostics'), not(equals(parameters('logAnalyticsWorkspaceId'), '')))]",
+              "type": "Microsoft.Insights/diagnosticSettings",
+              "apiVersion": "2021-05-01-preview",
+              "scope": "[format('Microsoft.KeyVault/vaults/{0}', variables('keyVaultName'))]",
+              "name": "[format('{0}-diagnostics', variables('keyVaultName'))]",
+              "properties": {
+                "workspaceId": "[parameters('logAnalyticsWorkspaceId')]",
+                "logs": [
+                  {
+                    "category": "AuditEvent",
+                    "enabled": true,
+                    "retentionPolicy": {
+                      "enabled": false,
+                      "days": 0
+                    }
+                  },
+                  {
+                    "category": "AzurePolicyEvaluationDetails",
+                    "enabled": true,
+                    "retentionPolicy": {
+                      "enabled": false,
+                      "days": 0
+                    }
+                  }
+                ],
+                "metrics": [
+                  {
+                    "category": "AllMetrics",
+                    "enabled": true,
+                    "retentionPolicy": {
+                      "enabled": false,
+                      "days": 0
+                    }
+                  }
+                ]
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.KeyVault/vaults', variables('keyVaultName'))]"
+              ]
+            }
+          ],
+          "outputs": {
+            "vaultUri": {
+              "type": "string",
+              "metadata": {
+                "description": "Key Vault URI"
+              },
+              "value": "[reference(resourceId('Microsoft.KeyVault/vaults', variables('keyVaultName')), '2024-11-01').vaultUri]"
+            },
+            "resourceId": {
+              "type": "string",
+              "metadata": {
+                "description": "Key Vault resource ID"
+              },
+              "value": "[resourceId('Microsoft.KeyVault/vaults', variables('keyVaultName'))]"
+            },
+            "name": {
+              "type": "string",
+              "metadata": {
+                "description": "Key Vault name"
+              },
+              "value": "[variables('keyVaultName')]"
+            },
+            "storageConnectionStringRef": {
+              "type": "string",
+              "metadata": {
+                "description": "Key Vault reference for storage connection string"
+              },
+              "value": "[if(variables('hasStorageSecret'), format('@Microsoft.KeyVault(VaultName={0};SecretName=storage-connection-string)', variables('keyVaultName')), '')]"
+            },
+            "docIntelApiKeyRef": {
+              "type": "string",
+              "metadata": {
+                "description": "Key Vault reference for Document Intelligence API key"
+              },
+              "value": "[if(variables('hasDocIntelSecret'), format('@Microsoft.KeyVault(VaultName={0};SecretName=doc-intel-api-key)', variables('keyVaultName')), '')]"
+            },
+            "cosmosConnectionStringRef": {
+              "type": "string",
+              "metadata": {
+                "description": "Key Vault reference for Cosmos DB connection string"
+              },
+              "value": "[if(variables('hasCosmosSecret'), format('@Microsoft.KeyVault(VaultName={0};SecretName=cosmos-connection-string)', variables('keyVaultName')), '')]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "logAnalyticsNew",
+        "rg"
+      ]
+    },
+    "functionAppNew": {
+      "condition": "[and(equals(parameters('deploymentMode'), 'new'), variables('shouldDeployFunctionApp'))]",
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "function-app-deployment",
+      "resourceGroup": "[parameters('resourceGroupName')]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "prefix": {
+            "value": "[parameters('prefix')]"
+          },
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "environment": {
+            "value": "[parameters('environment')]"
+          },
+          "tags": {
+            "value": "[parameters('tags')]"
+          },
+          "storageConnectionString": {
+            "value": "[reference('storageNew').outputs.connectionString.value]"
+          },
+          "docIntelEndpoint": {
+            "value": "[reference('docIntelNew').outputs.endpoint.value]"
+          },
+          "docIntelApiKey": {
+            "value": "[reference('docIntelNew').outputs.apiKey.value]"
+          },
+          "cosmosEndpoint": {
+            "value": "[reference('cosmosNew').outputs.endpoint.value]"
+          },
+          "cosmosDatabase": {
+            "value": "[parameters('cosmosDatabase')]"
+          },
+          "cosmosContainer": {
+            "value": "[parameters('cosmosContainer')]"
+          },
+          "keyVaultName": {
+            "value": "[reference('keyVaultNew').outputs.name.value]"
+          },
+          "logAnalyticsWorkspaceId": "[if(not(parameters('enableDiagnostics')), createObject('value', ''), if(equals(parameters('existingLogAnalyticsWorkspaceName'), ''), createObject('value', reference('logAnalyticsNew').outputs.workspaceId.value), if(variables('isLogAnalyticsCrossSubscription'), createObject('value', extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', variables('effectiveLogAnalyticsSubId'), variables('effectiveLogAnalyticsRg')), 'Microsoft.OperationalInsights/workspaces', parameters('existingLogAnalyticsWorkspaceName'))), createObject('value', extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('effectiveLogAnalyticsRg')), 'Microsoft.OperationalInsights/workspaces', parameters('existingLogAnalyticsWorkspaceName'))))))]",
+          "enableDiagnostics": {
+            "value": "[parameters('enableDiagnostics')]"
+          },
+          "appServicePlanSku": {
+            "value": "[parameters('appServicePlanSku')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.39.26.7824",
+              "templateHash": "9466108657952251900"
+            }
+          },
+          "parameters": {
+            "prefix": {
+              "type": "string",
+              "metadata": {
+                "description": "Prefix for resource naming"
+              }
+            },
+            "location": {
+              "type": "string",
+              "defaultValue": "[resourceGroup().location]",
+              "metadata": {
+                "description": "Azure region for deployment"
+              }
+            },
+            "environment": {
+              "type": "string",
+              "metadata": {
+                "description": "Environment name (dev, prod)"
+              }
+            },
+            "tags": {
+              "type": "object",
+              "defaultValue": {},
+              "metadata": {
+                "description": "Tags to apply to resources"
+              }
+            },
+            "storageConnectionString": {
+              "type": "string",
+              "metadata": {
+                "description": "Storage account connection string for Function App"
+              }
+            },
+            "docIntelEndpoint": {
+              "type": "string",
+              "metadata": {
+                "description": "Document Intelligence endpoint"
+              }
+            },
+            "docIntelApiKey": {
+              "type": "securestring",
+              "metadata": {
+                "description": "Document Intelligence API key"
+              }
+            },
+            "cosmosEndpoint": {
+              "type": "string",
+              "metadata": {
+                "description": "Cosmos DB endpoint"
+              }
+            },
+            "cosmosDatabase": {
+              "type": "string",
+              "metadata": {
+                "description": "Cosmos DB database name"
+              }
+            },
+            "cosmosContainer": {
+              "type": "string",
+              "metadata": {
+                "description": "Cosmos DB container name"
+              }
+            },
+            "keyVaultName": {
+              "type": "string",
+              "metadata": {
+                "description": "Key Vault name for secret references"
+              }
+            },
+            "logAnalyticsWorkspaceId": {
+              "type": "string",
+              "defaultValue": "",
+              "metadata": {
+                "description": "Log Analytics workspace ID for diagnostic settings (optional)"
+              }
+            },
+            "enableDiagnostics": {
+              "type": "bool",
+              "defaultValue": true,
+              "metadata": {
+                "description": "Enable diagnostic settings"
+              }
+            },
+            "appServicePlanSku": {
+              "type": "string",
+              "defaultValue": "Y1",
+              "allowedValues": [
+                "Y1",
+                "B1",
+                "B2",
+                "S1",
+                "P1v2",
+                "EP1"
+              ],
+              "metadata": {
+                "description": "App Service Plan SKU. Use Y1 for Consumption (requires Dynamic VM quota), B1 for Basic, S1 for Standard, EP1 for Premium."
+              }
+            }
+          },
+          "variables": {
+            "skuTiers": {
+              "Y1": "Dynamic",
+              "B1": "Basic",
+              "B2": "Basic",
+              "S1": "Standard",
+              "P1v2": "PremiumV2",
+              "EP1": "ElasticPremium"
+            },
+            "skuTier": "[variables('skuTiers')[parameters('appServicePlanSku')]]",
+            "isConsumptionPlan": "[equals(parameters('appServicePlanSku'), 'Y1')]",
+            "isElasticPremium": "[equals(parameters('appServicePlanSku'), 'EP1')]",
+            "functionAppName": "[format('{0}-func-{1}', parameters('prefix'), parameters('environment'))]",
+            "appServicePlanName": "[format('{0}-asp-{1}', parameters('prefix'), parameters('environment'))]",
+            "appInsightsName": "[format('{0}-ai-{1}', parameters('prefix'), parameters('environment'))]"
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Insights/components",
+              "apiVersion": "2020-02-02",
+              "name": "[variables('appInsightsName')]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "kind": "web",
+              "properties": {
+                "Application_Type": "web",
+                "Request_Source": "rest",
+                "WorkspaceResourceId": "[if(not(equals(parameters('logAnalyticsWorkspaceId'), '')), parameters('logAnalyticsWorkspaceId'), null())]",
+                "publicNetworkAccessForIngestion": "Enabled",
+                "publicNetworkAccessForQuery": "Enabled"
+              }
+            },
+            {
+              "type": "Microsoft.Web/serverfarms",
+              "apiVersion": "2024-04-01",
+              "name": "[variables('appServicePlanName')]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "kind": "[if(variables('isElasticPremium'), 'elastic', 'functionapp')]",
+              "sku": {
+                "name": "[parameters('appServicePlanSku')]",
+                "tier": "[variables('skuTier')]"
+              },
+              "properties": {
+                "reserved": true,
+                "maximumElasticWorkerCount": "[if(variables('isElasticPremium'), 20, null())]"
+              }
+            },
+            {
+              "type": "Microsoft.Web/sites",
+              "apiVersion": "2024-04-01",
+              "name": "[variables('functionAppName')]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "kind": "functionapp,linux",
+              "identity": {
+                "type": "SystemAssigned"
+              },
+              "properties": {
+                "serverFarmId": "[resourceId('Microsoft.Web/serverfarms', variables('appServicePlanName'))]",
+                "httpsOnly": true,
+                "publicNetworkAccess": "Enabled",
+                "siteConfig": {
+                  "linuxFxVersion": "PYTHON|3.10",
+                  "pythonVersion": "3.10",
+                  "ftpsState": "Disabled",
+                  "minTlsVersion": "1.2",
+                  "http20Enabled": true,
+                  "functionAppScaleLimit": 200,
+                  "appSettings": [
+                    {
+                      "name": "FUNCTIONS_EXTENSION_VERSION",
+                      "value": "~4"
+                    },
+                    {
+                      "name": "FUNCTIONS_WORKER_RUNTIME",
+                      "value": "python"
+                    },
+                    {
+                      "name": "AzureWebJobsStorage",
+                      "value": "[parameters('storageConnectionString')]"
+                    },
+                    {
+                      "name": "WEBSITE_CONTENTAZUREFILECONNECTIONSTRING",
+                      "value": "[parameters('storageConnectionString')]"
+                    },
+                    {
+                      "name": "WEBSITE_CONTENTSHARE",
+                      "value": "[variables('functionAppName')]"
+                    },
+                    {
+                      "name": "APPINSIGHTS_INSTRUMENTATIONKEY",
+                      "value": "[reference(resourceId('Microsoft.Insights/components', variables('appInsightsName')), '2020-02-02').InstrumentationKey]"
+                    },
+                    {
+                      "name": "APPLICATIONINSIGHTS_CONNECTION_STRING",
+                      "value": "[reference(resourceId('Microsoft.Insights/components', variables('appInsightsName')), '2020-02-02').ConnectionString]"
+                    },
+                    {
+                      "name": "DOC_INTEL_ENDPOINT",
+                      "value": "[parameters('docIntelEndpoint')]"
+                    },
+                    {
+                      "name": "DOC_INTEL_API_KEY",
+                      "value": "[parameters('docIntelApiKey')]"
+                    },
+                    {
+                      "name": "COSMOS_ENDPOINT",
+                      "value": "[parameters('cosmosEndpoint')]"
+                    },
+                    {
+                      "name": "COSMOS_DATABASE",
+                      "value": "[parameters('cosmosDatabase')]"
+                    },
+                    {
+                      "name": "COSMOS_CONTAINER",
+                      "value": "[parameters('cosmosContainer')]"
+                    },
+                    {
+                      "name": "KEY_VAULT_NAME",
+                      "value": "[parameters('keyVaultName')]"
+                    },
+                    {
+                      "name": "SCM_DO_BUILD_DURING_DEPLOYMENT",
+                      "value": "true"
+                    },
+                    {
+                      "name": "ENABLE_ORYX_BUILD",
+                      "value": "true"
+                    }
+                  ]
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Insights/components', variables('appInsightsName'))]",
+                "[resourceId('Microsoft.Web/serverfarms', variables('appServicePlanName'))]"
+              ]
+            },
+            {
+              "condition": "[and(parameters('enableDiagnostics'), not(equals(parameters('logAnalyticsWorkspaceId'), '')))]",
+              "type": "Microsoft.Insights/diagnosticSettings",
+              "apiVersion": "2021-05-01-preview",
+              "scope": "[format('Microsoft.Web/sites/{0}', variables('functionAppName'))]",
+              "name": "[format('{0}-diagnostics', variables('functionAppName'))]",
+              "properties": {
+                "workspaceId": "[parameters('logAnalyticsWorkspaceId')]",
+                "logs": [
+                  {
+                    "category": "FunctionAppLogs",
+                    "enabled": true,
+                    "retentionPolicy": {
+                      "enabled": false,
+                      "days": 0
+                    }
+                  }
+                ],
+                "metrics": [
+                  {
+                    "category": "AllMetrics",
+                    "enabled": true,
+                    "retentionPolicy": {
+                      "enabled": false,
+                      "days": 0
+                    }
+                  }
+                ]
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Web/sites', variables('functionAppName'))]"
+              ]
+            },
+            {
+              "condition": "[and(parameters('enableDiagnostics'), not(equals(parameters('logAnalyticsWorkspaceId'), '')))]",
+              "type": "Microsoft.Insights/diagnosticSettings",
+              "apiVersion": "2021-05-01-preview",
+              "scope": "[format('Microsoft.Web/serverfarms/{0}', variables('appServicePlanName'))]",
+              "name": "[format('{0}-diagnostics', variables('appServicePlanName'))]",
+              "properties": {
+                "workspaceId": "[parameters('logAnalyticsWorkspaceId')]",
+                "metrics": [
+                  {
+                    "category": "AllMetrics",
+                    "enabled": true,
+                    "retentionPolicy": {
+                      "enabled": false,
+                      "days": 0
+                    }
+                  }
+                ]
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Web/serverfarms', variables('appServicePlanName'))]"
+              ]
+            }
+          ],
+          "outputs": {
+            "name": {
+              "type": "string",
+              "metadata": {
+                "description": "Function App name"
+              },
+              "value": "[variables('functionAppName')]"
+            },
+            "resourceId": {
+              "type": "string",
+              "metadata": {
+                "description": "Function App resource ID"
+              },
+              "value": "[resourceId('Microsoft.Web/sites', variables('functionAppName'))]"
+            },
+            "defaultHostname": {
+              "type": "string",
+              "metadata": {
+                "description": "Function App default hostname"
+              },
+              "value": "[reference(resourceId('Microsoft.Web/sites', variables('functionAppName')), '2024-04-01').defaultHostName]"
+            },
+            "functionAppUrl": {
+              "type": "string",
+              "metadata": {
+                "description": "Function App URL"
+              },
+              "value": "[format('https://{0}', reference(resourceId('Microsoft.Web/sites', variables('functionAppName')), '2024-04-01').defaultHostName)]"
+            },
+            "principalId": {
+              "type": "string",
+              "metadata": {
+                "description": "Function App principal ID for managed identity"
+              },
+              "value": "[reference(resourceId('Microsoft.Web/sites', variables('functionAppName')), '2024-04-01', 'full').identity.principalId]"
+            },
+            "appInsightsKey": {
+              "type": "string",
+              "metadata": {
+                "description": "Application Insights instrumentation key"
+              },
+              "value": "[reference(resourceId('Microsoft.Insights/components', variables('appInsightsName')), '2020-02-02').InstrumentationKey]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "cosmosNew",
+        "docIntelNew",
+        "keyVaultNew",
+        "logAnalyticsNew",
+        "rg",
+        "storageNew"
+      ]
+    },
+    "synapseNew": {
+      "condition": "[equals(parameters('deploymentMode'), 'new')]",
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "synapse-deployment",
+      "resourceGroup": "[parameters('resourceGroupName')]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "prefix": {
+            "value": "[parameters('prefix')]"
+          },
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "environment": {
+            "value": "[parameters('environment')]"
+          },
+          "tags": {
+            "value": "[parameters('tags')]"
+          },
+          "storageAccountId": {
+            "value": "[reference('storageNew').outputs.resourceId.value]"
+          },
+          "storageAccountName": {
+            "value": "[reference('storageNew').outputs.name.value]"
+          },
+          "sqlAdministratorPassword": {
+            "value": "[parameters('sqlAdministratorPassword')]"
+          },
+          "logAnalyticsWorkspaceId": "[if(not(parameters('enableDiagnostics')), createObject('value', ''), if(equals(parameters('existingLogAnalyticsWorkspaceName'), ''), createObject('value', reference('logAnalyticsNew').outputs.workspaceId.value), if(variables('isLogAnalyticsCrossSubscription'), createObject('value', extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', variables('effectiveLogAnalyticsSubId'), variables('effectiveLogAnalyticsRg')), 'Microsoft.OperationalInsights/workspaces', parameters('existingLogAnalyticsWorkspaceName'))), createObject('value', extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('effectiveLogAnalyticsRg')), 'Microsoft.OperationalInsights/workspaces', parameters('existingLogAnalyticsWorkspaceName'))))))]",
+          "enableDiagnostics": {
+            "value": "[parameters('enableDiagnostics')]"
+          },
+          "enableGitHubIntegration": {
+            "value": "[parameters('enableSynapseGitHubIntegration')]"
+          },
+          "gitHubAccountName": {
+            "value": "[parameters('synapseGitHubAccountName')]"
+          },
+          "gitHubRepositoryName": {
+            "value": "[parameters('synapseGitHubRepositoryName')]"
+          },
+          "gitHubCollaborationBranch": {
+            "value": "[parameters('synapseGitHubCollaborationBranch')]"
+          },
+          "gitHubRootFolder": {
+            "value": "[parameters('synapseGitHubRootFolder')]"
+          },
+          "gitHubType": {
+            "value": "[parameters('synapseGitHubType')]"
+          },
+          "gitHubHostName": {
+            "value": "[parameters('synapseGitHubHostName')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.39.26.7824",
+              "templateHash": "14063964805055008966"
+            }
+          },
+          "parameters": {
+            "prefix": {
+              "type": "string",
+              "metadata": {
+                "description": "Prefix for resource naming"
+              }
+            },
+            "location": {
+              "type": "string",
+              "defaultValue": "[resourceGroup().location]",
+              "metadata": {
+                "description": "Azure region for deployment"
+              }
+            },
+            "environment": {
+              "type": "string",
+              "metadata": {
+                "description": "Environment name (dev, prod)"
+              }
+            },
+            "tags": {
+              "type": "object",
+              "defaultValue": {},
+              "metadata": {
+                "description": "Tags to apply to resources"
+              }
+            },
+            "storageAccountId": {
+              "type": "string",
+              "metadata": {
+                "description": "Storage account resource ID for Synapse"
+              }
+            },
+            "storageAccountName": {
+              "type": "string",
+              "metadata": {
+                "description": "Storage account name"
+              }
+            },
+            "sqlAdministratorLogin": {
+              "type": "string",
+              "defaultValue": "sqladmin",
+              "metadata": {
+                "description": "SQL administrator login"
+              }
+            },
+            "sqlAdministratorPassword": {
+              "type": "securestring",
+              "metadata": {
+                "description": "SQL administrator password"
+              }
+            },
+            "logAnalyticsWorkspaceId": {
+              "type": "string",
+              "defaultValue": "",
+              "metadata": {
+                "description": "Log Analytics workspace ID for diagnostic settings (optional)"
+              }
+            },
+            "enableDiagnostics": {
+              "type": "bool",
+              "defaultValue": true,
+              "metadata": {
+                "description": "Enable diagnostic settings"
+              }
+            },
+            "enableGitHubIntegration": {
+              "type": "bool",
+              "defaultValue": false,
+              "metadata": {
+                "description": "Enable GitHub integration for Synapse workspace"
+              }
+            },
+            "gitHubAccountName": {
+              "type": "string",
+              "defaultValue": "",
+              "metadata": {
+                "description": "GitHub account name (organization or user)"
+              }
+            },
+            "gitHubRepositoryName": {
+              "type": "string",
+              "defaultValue": "",
+              "metadata": {
+                "description": "GitHub repository name"
+              }
+            },
+            "gitHubCollaborationBranch": {
+              "type": "string",
+              "defaultValue": "main",
+              "metadata": {
+                "description": "GitHub collaboration branch (default: main)"
+              }
+            },
+            "gitHubRootFolder": {
+              "type": "string",
+              "defaultValue": "/src/synapse",
+              "metadata": {
+                "description": "Root folder in repository for Synapse artifacts"
+              }
+            },
+            "gitHubAutoCreateRepo": {
+              "type": "bool",
+              "defaultValue": false,
+              "metadata": {
+                "description": "Automatically create GitHub repo if it does not exist (requires appropriate permissions)"
+              }
+            },
+            "gitHubType": {
+              "type": "string",
+              "defaultValue": "GitHub",
+              "allowedValues": [
+                "GitHub",
+                "GitHubEnterprise"
+              ],
+              "metadata": {
+                "description": "GitHub type (GitHub or GitHubEnterprise)"
+              }
+            },
+            "gitHubHostName": {
+              "type": "string",
+              "defaultValue": "",
+              "metadata": {
+                "description": "GitHub Enterprise host URL (only for GitHubEnterprise type)"
+              }
+            }
+          },
+          "variables": {
+            "synapseWorkspaceName": "[format('{0}-syn-{1}', parameters('prefix'), parameters('environment'))]",
+            "defaultDataLakeStorageFilesystemName": "synapse",
+            "gitHubConfiguration": "[if(parameters('enableGitHubIntegration'), createObject('type', parameters('gitHubType'), 'accountName', parameters('gitHubAccountName'), 'repositoryName', parameters('gitHubRepositoryName'), 'collaborationBranch', parameters('gitHubCollaborationBranch'), 'rootFolder', parameters('gitHubRootFolder'), 'hostName', if(equals(parameters('gitHubType'), 'GitHubEnterprise'), parameters('gitHubHostName'), '')), null())]"
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Storage/storageAccounts/blobServices/containers",
+              "apiVersion": "2024-01-01",
+              "name": "[format('{0}/{1}/{2}', parameters('storageAccountName'), 'default', variables('defaultDataLakeStorageFilesystemName'))]",
+              "properties": {
+                "publicAccess": "None"
+              }
+            },
+            {
+              "type": "Microsoft.Synapse/workspaces",
+              "apiVersion": "2021-06-01",
+              "name": "[variables('synapseWorkspaceName')]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "identity": {
+                "type": "SystemAssigned"
+              },
+              "properties": {
+                "defaultDataLakeStorage": {
+                  "resourceId": "[parameters('storageAccountId')]",
+                  "accountUrl": "[format('https://{0}.dfs.{1}', parameters('storageAccountName'), environment().suffixes.storage)]",
+                  "filesystem": "[variables('defaultDataLakeStorageFilesystemName')]"
+                },
+                "sqlAdministratorLogin": "[parameters('sqlAdministratorLogin')]",
+                "sqlAdministratorLoginPassword": "[parameters('sqlAdministratorPassword')]",
+                "managedVirtualNetwork": "default",
+                "managedResourceGroupName": "[format('{0}-syn-managed-{1}', parameters('prefix'), parameters('environment'))]",
+                "publicNetworkAccess": "Enabled",
+                "azureADOnlyAuthentication": false,
+                "workspaceRepositoryConfiguration": "[if(parameters('enableGitHubIntegration'), createObject('type', 'WorkspaceGitHubConfiguration', 'accountName', parameters('gitHubAccountName'), 'repositoryName', parameters('gitHubRepositoryName'), 'collaborationBranch', parameters('gitHubCollaborationBranch'), 'rootFolder', parameters('gitHubRootFolder'), 'hostName', if(equals(parameters('gitHubType'), 'GitHubEnterprise'), parameters('gitHubHostName'), '')), null())]"
+              }
+            },
+            {
+              "type": "Microsoft.Synapse/workspaces/firewallRules",
+              "apiVersion": "2021-06-01",
+              "name": "[format('{0}/{1}', variables('synapseWorkspaceName'), 'AllowAllWindowsAzureIps')]",
+              "properties": {
+                "startIpAddress": "0.0.0.0",
+                "endIpAddress": "0.0.0.0"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Synapse/workspaces', variables('synapseWorkspaceName'))]"
+              ]
+            },
+            {
+              "condition": "[equals(parameters('environment'), 'dev')]",
+              "type": "Microsoft.Synapse/workspaces/firewallRules",
+              "apiVersion": "2021-06-01",
+              "name": "[format('{0}/{1}', variables('synapseWorkspaceName'), 'AllowAll')]",
+              "properties": {
+                "startIpAddress": "0.0.0.0",
+                "endIpAddress": "255.255.255.255"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Synapse/workspaces', variables('synapseWorkspaceName'))]"
+              ]
+            },
+            {
+              "condition": "[and(parameters('enableDiagnostics'), not(equals(parameters('logAnalyticsWorkspaceId'), '')))]",
+              "type": "Microsoft.Insights/diagnosticSettings",
+              "apiVersion": "2021-05-01-preview",
+              "scope": "[format('Microsoft.Synapse/workspaces/{0}', variables('synapseWorkspaceName'))]",
+              "name": "[format('{0}-diagnostics', variables('synapseWorkspaceName'))]",
+              "properties": {
+                "workspaceId": "[parameters('logAnalyticsWorkspaceId')]",
+                "logs": [
+                  {
+                    "category": "SynapseRbacOperations",
+                    "enabled": true,
+                    "retentionPolicy": {
+                      "enabled": false,
+                      "days": 0
+                    }
+                  },
+                  {
+                    "category": "GatewayApiRequests",
+                    "enabled": true,
+                    "retentionPolicy": {
+                      "enabled": false,
+                      "days": 0
+                    }
+                  },
+                  {
+                    "category": "BuiltinSqlReqsEnded",
+                    "enabled": true,
+                    "retentionPolicy": {
+                      "enabled": false,
+                      "days": 0
+                    }
+                  },
+                  {
+                    "category": "IntegrationPipelineRuns",
+                    "enabled": true,
+                    "retentionPolicy": {
+                      "enabled": false,
+                      "days": 0
+                    }
+                  },
+                  {
+                    "category": "IntegrationActivityRuns",
+                    "enabled": true,
+                    "retentionPolicy": {
+                      "enabled": false,
+                      "days": 0
+                    }
+                  },
+                  {
+                    "category": "IntegrationTriggerRuns",
+                    "enabled": true,
+                    "retentionPolicy": {
+                      "enabled": false,
+                      "days": 0
+                    }
+                  }
+                ]
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Synapse/workspaces', variables('synapseWorkspaceName'))]"
+              ]
+            }
+          ],
+          "outputs": {
+            "name": {
+              "type": "string",
+              "metadata": {
+                "description": "Synapse workspace name"
+              },
+              "value": "[variables('synapseWorkspaceName')]"
+            },
+            "resourceId": {
+              "type": "string",
+              "metadata": {
+                "description": "Synapse workspace resource ID"
+              },
+              "value": "[resourceId('Microsoft.Synapse/workspaces', variables('synapseWorkspaceName'))]"
+            },
+            "devEndpoint": {
+              "type": "string",
+              "metadata": {
+                "description": "Synapse workspace development endpoint"
+              },
+              "value": "[reference(resourceId('Microsoft.Synapse/workspaces', variables('synapseWorkspaceName')), '2021-06-01').connectivityEndpoints.dev]"
+            },
+            "sqlOnDemandEndpoint": {
+              "type": "string",
+              "metadata": {
+                "description": "Synapse workspace SQL on-demand endpoint"
+              },
+              "value": "[reference(resourceId('Microsoft.Synapse/workspaces', variables('synapseWorkspaceName')), '2021-06-01').connectivityEndpoints.sqlOnDemand]"
+            },
+            "principalId": {
+              "type": "string",
+              "metadata": {
+                "description": "Synapse workspace principal ID for managed identity"
+              },
+              "value": "[reference(resourceId('Microsoft.Synapse/workspaces', variables('synapseWorkspaceName')), '2021-06-01', 'full').identity.principalId]"
+            },
+            "gitHubIntegrationEnabled": {
+              "type": "bool",
+              "metadata": {
+                "description": "GitHub integration enabled"
+              },
+              "value": "[parameters('enableGitHubIntegration')]"
+            },
+            "gitHubRepositoryUrl": {
+              "type": "string",
+              "metadata": {
+                "description": "GitHub repository URL (if GitHub integration is enabled)"
+              },
+              "value": "[if(parameters('enableGitHubIntegration'), format('https://github.com/{0}/{1}', parameters('gitHubAccountName'), parameters('gitHubRepositoryName')), '')]"
+            },
+            "gitHubCollaborationBranch": {
+              "type": "string",
+              "metadata": {
+                "description": "GitHub collaboration branch"
+              },
+              "value": "[if(parameters('enableGitHubIntegration'), parameters('gitHubCollaborationBranch'), '')]"
+            },
+            "gitHubRootFolder": {
+              "type": "string",
+              "metadata": {
+                "description": "Synapse artifacts root folder in GitHub"
+              },
+              "value": "[if(parameters('enableGitHubIntegration'), parameters('gitHubRootFolder'), '')]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "logAnalyticsNew",
+        "rg",
+        "storageNew"
+      ]
+    },
+    "functionAppExisting": {
+      "condition": "[and(equals(parameters('deploymentMode'), 'existing'), variables('shouldDeployFunctionApp'))]",
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "function-app-existing-deployment",
+      "resourceGroup": "[parameters('resourceGroupName')]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "prefix": {
+            "value": "[parameters('prefix')]"
+          },
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "environment": {
+            "value": "[parameters('environment')]"
+          },
+          "tags": {
+            "value": "[parameters('tags')]"
+          },
+          "storageConnectionString": "[if(equals(parameters('deploymentMode'), 'existing'), createObject('value', format('DefaultEndpointsProtocol=https;AccountName={0};EndpointSuffix={1};AccountKey={2}', parameters('existingStorageAccountName'), environment().suffixes.storage, listKeys('existingStorage', '2024-01-01').keys[0].value)), createObject('value', ''))]",
+          "docIntelEndpoint": {
+            "value": "[reference('existingDocIntel').endpoint]"
+          },
+          "docIntelApiKey": {
+            "value": "[listKeys('existingDocIntel', '2024-10-01').key1]"
+          },
+          "cosmosEndpoint": {
+            "value": "[reference('existingCosmos').documentEndpoint]"
+          },
+          "cosmosDatabase": {
+            "value": "[parameters('cosmosDatabase')]"
+          },
+          "cosmosContainer": {
+            "value": "[parameters('cosmosContainer')]"
+          },
+          "keyVaultName": {
+            "value": "[parameters('existingKeyVaultName')]"
+          },
+          "logAnalyticsWorkspaceId": "[if(not(parameters('enableDiagnostics')), createObject('value', ''), if(equals(parameters('existingLogAnalyticsWorkspaceName'), ''), createObject('value', reference('logAnalyticsNew').outputs.workspaceId.value), if(variables('isLogAnalyticsCrossSubscription'), createObject('value', extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', variables('effectiveLogAnalyticsSubId'), variables('effectiveLogAnalyticsRg')), 'Microsoft.OperationalInsights/workspaces', parameters('existingLogAnalyticsWorkspaceName'))), createObject('value', extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('effectiveLogAnalyticsRg')), 'Microsoft.OperationalInsights/workspaces', parameters('existingLogAnalyticsWorkspaceName'))))))]",
+          "enableDiagnostics": {
+            "value": "[parameters('enableDiagnostics')]"
+          },
+          "appServicePlanSku": {
+            "value": "[parameters('appServicePlanSku')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.39.26.7824",
+              "templateHash": "9466108657952251900"
+            }
+          },
+          "parameters": {
+            "prefix": {
+              "type": "string",
+              "metadata": {
+                "description": "Prefix for resource naming"
+              }
+            },
+            "location": {
+              "type": "string",
+              "defaultValue": "[resourceGroup().location]",
+              "metadata": {
+                "description": "Azure region for deployment"
+              }
+            },
+            "environment": {
+              "type": "string",
+              "metadata": {
+                "description": "Environment name (dev, prod)"
+              }
+            },
+            "tags": {
+              "type": "object",
+              "defaultValue": {},
+              "metadata": {
+                "description": "Tags to apply to resources"
+              }
+            },
+            "storageConnectionString": {
+              "type": "string",
+              "metadata": {
+                "description": "Storage account connection string for Function App"
+              }
+            },
+            "docIntelEndpoint": {
+              "type": "string",
+              "metadata": {
+                "description": "Document Intelligence endpoint"
+              }
+            },
+            "docIntelApiKey": {
+              "type": "securestring",
+              "metadata": {
+                "description": "Document Intelligence API key"
+              }
+            },
+            "cosmosEndpoint": {
+              "type": "string",
+              "metadata": {
+                "description": "Cosmos DB endpoint"
+              }
+            },
+            "cosmosDatabase": {
+              "type": "string",
+              "metadata": {
+                "description": "Cosmos DB database name"
+              }
+            },
+            "cosmosContainer": {
+              "type": "string",
+              "metadata": {
+                "description": "Cosmos DB container name"
+              }
+            },
+            "keyVaultName": {
+              "type": "string",
+              "metadata": {
+                "description": "Key Vault name for secret references"
+              }
+            },
+            "logAnalyticsWorkspaceId": {
+              "type": "string",
+              "defaultValue": "",
+              "metadata": {
+                "description": "Log Analytics workspace ID for diagnostic settings (optional)"
+              }
+            },
+            "enableDiagnostics": {
+              "type": "bool",
+              "defaultValue": true,
+              "metadata": {
+                "description": "Enable diagnostic settings"
+              }
+            },
+            "appServicePlanSku": {
+              "type": "string",
+              "defaultValue": "Y1",
+              "allowedValues": [
+                "Y1",
+                "B1",
+                "B2",
+                "S1",
+                "P1v2",
+                "EP1"
+              ],
+              "metadata": {
+                "description": "App Service Plan SKU. Use Y1 for Consumption (requires Dynamic VM quota), B1 for Basic, S1 for Standard, EP1 for Premium."
+              }
+            }
+          },
+          "variables": {
+            "skuTiers": {
+              "Y1": "Dynamic",
+              "B1": "Basic",
+              "B2": "Basic",
+              "S1": "Standard",
+              "P1v2": "PremiumV2",
+              "EP1": "ElasticPremium"
+            },
+            "skuTier": "[variables('skuTiers')[parameters('appServicePlanSku')]]",
+            "isConsumptionPlan": "[equals(parameters('appServicePlanSku'), 'Y1')]",
+            "isElasticPremium": "[equals(parameters('appServicePlanSku'), 'EP1')]",
+            "functionAppName": "[format('{0}-func-{1}', parameters('prefix'), parameters('environment'))]",
+            "appServicePlanName": "[format('{0}-asp-{1}', parameters('prefix'), parameters('environment'))]",
+            "appInsightsName": "[format('{0}-ai-{1}', parameters('prefix'), parameters('environment'))]"
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Insights/components",
+              "apiVersion": "2020-02-02",
+              "name": "[variables('appInsightsName')]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "kind": "web",
+              "properties": {
+                "Application_Type": "web",
+                "Request_Source": "rest",
+                "WorkspaceResourceId": "[if(not(equals(parameters('logAnalyticsWorkspaceId'), '')), parameters('logAnalyticsWorkspaceId'), null())]",
+                "publicNetworkAccessForIngestion": "Enabled",
+                "publicNetworkAccessForQuery": "Enabled"
+              }
+            },
+            {
+              "type": "Microsoft.Web/serverfarms",
+              "apiVersion": "2024-04-01",
+              "name": "[variables('appServicePlanName')]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "kind": "[if(variables('isElasticPremium'), 'elastic', 'functionapp')]",
+              "sku": {
+                "name": "[parameters('appServicePlanSku')]",
+                "tier": "[variables('skuTier')]"
+              },
+              "properties": {
+                "reserved": true,
+                "maximumElasticWorkerCount": "[if(variables('isElasticPremium'), 20, null())]"
+              }
+            },
+            {
+              "type": "Microsoft.Web/sites",
+              "apiVersion": "2024-04-01",
+              "name": "[variables('functionAppName')]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "kind": "functionapp,linux",
+              "identity": {
+                "type": "SystemAssigned"
+              },
+              "properties": {
+                "serverFarmId": "[resourceId('Microsoft.Web/serverfarms', variables('appServicePlanName'))]",
+                "httpsOnly": true,
+                "publicNetworkAccess": "Enabled",
+                "siteConfig": {
+                  "linuxFxVersion": "PYTHON|3.10",
+                  "pythonVersion": "3.10",
+                  "ftpsState": "Disabled",
+                  "minTlsVersion": "1.2",
+                  "http20Enabled": true,
+                  "functionAppScaleLimit": 200,
+                  "appSettings": [
+                    {
+                      "name": "FUNCTIONS_EXTENSION_VERSION",
+                      "value": "~4"
+                    },
+                    {
+                      "name": "FUNCTIONS_WORKER_RUNTIME",
+                      "value": "python"
+                    },
+                    {
+                      "name": "AzureWebJobsStorage",
+                      "value": "[parameters('storageConnectionString')]"
+                    },
+                    {
+                      "name": "WEBSITE_CONTENTAZUREFILECONNECTIONSTRING",
+                      "value": "[parameters('storageConnectionString')]"
+                    },
+                    {
+                      "name": "WEBSITE_CONTENTSHARE",
+                      "value": "[variables('functionAppName')]"
+                    },
+                    {
+                      "name": "APPINSIGHTS_INSTRUMENTATIONKEY",
+                      "value": "[reference(resourceId('Microsoft.Insights/components', variables('appInsightsName')), '2020-02-02').InstrumentationKey]"
+                    },
+                    {
+                      "name": "APPLICATIONINSIGHTS_CONNECTION_STRING",
+                      "value": "[reference(resourceId('Microsoft.Insights/components', variables('appInsightsName')), '2020-02-02').ConnectionString]"
+                    },
+                    {
+                      "name": "DOC_INTEL_ENDPOINT",
+                      "value": "[parameters('docIntelEndpoint')]"
+                    },
+                    {
+                      "name": "DOC_INTEL_API_KEY",
+                      "value": "[parameters('docIntelApiKey')]"
+                    },
+                    {
+                      "name": "COSMOS_ENDPOINT",
+                      "value": "[parameters('cosmosEndpoint')]"
+                    },
+                    {
+                      "name": "COSMOS_DATABASE",
+                      "value": "[parameters('cosmosDatabase')]"
+                    },
+                    {
+                      "name": "COSMOS_CONTAINER",
+                      "value": "[parameters('cosmosContainer')]"
+                    },
+                    {
+                      "name": "KEY_VAULT_NAME",
+                      "value": "[parameters('keyVaultName')]"
+                    },
+                    {
+                      "name": "SCM_DO_BUILD_DURING_DEPLOYMENT",
+                      "value": "true"
+                    },
+                    {
+                      "name": "ENABLE_ORYX_BUILD",
+                      "value": "true"
+                    }
+                  ]
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Insights/components', variables('appInsightsName'))]",
+                "[resourceId('Microsoft.Web/serverfarms', variables('appServicePlanName'))]"
+              ]
+            },
+            {
+              "condition": "[and(parameters('enableDiagnostics'), not(equals(parameters('logAnalyticsWorkspaceId'), '')))]",
+              "type": "Microsoft.Insights/diagnosticSettings",
+              "apiVersion": "2021-05-01-preview",
+              "scope": "[format('Microsoft.Web/sites/{0}', variables('functionAppName'))]",
+              "name": "[format('{0}-diagnostics', variables('functionAppName'))]",
+              "properties": {
+                "workspaceId": "[parameters('logAnalyticsWorkspaceId')]",
+                "logs": [
+                  {
+                    "category": "FunctionAppLogs",
+                    "enabled": true,
+                    "retentionPolicy": {
+                      "enabled": false,
+                      "days": 0
+                    }
+                  }
+                ],
+                "metrics": [
+                  {
+                    "category": "AllMetrics",
+                    "enabled": true,
+                    "retentionPolicy": {
+                      "enabled": false,
+                      "days": 0
+                    }
+                  }
+                ]
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Web/sites', variables('functionAppName'))]"
+              ]
+            },
+            {
+              "condition": "[and(parameters('enableDiagnostics'), not(equals(parameters('logAnalyticsWorkspaceId'), '')))]",
+              "type": "Microsoft.Insights/diagnosticSettings",
+              "apiVersion": "2021-05-01-preview",
+              "scope": "[format('Microsoft.Web/serverfarms/{0}', variables('appServicePlanName'))]",
+              "name": "[format('{0}-diagnostics', variables('appServicePlanName'))]",
+              "properties": {
+                "workspaceId": "[parameters('logAnalyticsWorkspaceId')]",
+                "metrics": [
+                  {
+                    "category": "AllMetrics",
+                    "enabled": true,
+                    "retentionPolicy": {
+                      "enabled": false,
+                      "days": 0
+                    }
+                  }
+                ]
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Web/serverfarms', variables('appServicePlanName'))]"
+              ]
+            }
+          ],
+          "outputs": {
+            "name": {
+              "type": "string",
+              "metadata": {
+                "description": "Function App name"
+              },
+              "value": "[variables('functionAppName')]"
+            },
+            "resourceId": {
+              "type": "string",
+              "metadata": {
+                "description": "Function App resource ID"
+              },
+              "value": "[resourceId('Microsoft.Web/sites', variables('functionAppName'))]"
+            },
+            "defaultHostname": {
+              "type": "string",
+              "metadata": {
+                "description": "Function App default hostname"
+              },
+              "value": "[reference(resourceId('Microsoft.Web/sites', variables('functionAppName')), '2024-04-01').defaultHostName]"
+            },
+            "functionAppUrl": {
+              "type": "string",
+              "metadata": {
+                "description": "Function App URL"
+              },
+              "value": "[format('https://{0}', reference(resourceId('Microsoft.Web/sites', variables('functionAppName')), '2024-04-01').defaultHostName)]"
+            },
+            "principalId": {
+              "type": "string",
+              "metadata": {
+                "description": "Function App principal ID for managed identity"
+              },
+              "value": "[reference(resourceId('Microsoft.Web/sites', variables('functionAppName')), '2024-04-01', 'full').identity.principalId]"
+            },
+            "appInsightsKey": {
+              "type": "string",
+              "metadata": {
+                "description": "Application Insights instrumentation key"
+              },
+              "value": "[reference(resourceId('Microsoft.Insights/components', variables('appInsightsName')), '2020-02-02').InstrumentationKey]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "existingCosmos",
+        "existingDocIntel",
+        "logAnalyticsNew",
+        "rg"
+      ]
+    },
+    "keyVaultRoleNew": {
+      "condition": "[and(equals(parameters('deploymentMode'), 'new'), variables('shouldDeployFunctionApp'))]",
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "keyvault-role-new",
+      "resourceGroup": "[parameters('resourceGroupName')]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "principalId": {
+            "value": "[reference('functionAppNew').outputs.principalId.value]"
+          },
+          "roleDefinitionId": {
+            "value": "4633458b-17de-408a-b874-0445c86b69e6"
+          },
+          "principalType": {
+            "value": "ServicePrincipal"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.39.26.7824",
+              "templateHash": "14008953457204738426"
+            }
+          },
+          "parameters": {
+            "principalId": {
+              "type": "string",
+              "metadata": {
+                "description": "Principal ID to assign the role to"
+              }
+            },
+            "roleDefinitionId": {
+              "type": "string",
+              "metadata": {
+                "description": "Role definition ID (GUID)"
+              }
+            },
+            "principalType": {
+              "type": "string",
+              "defaultValue": "ServicePrincipal",
+              "allowedValues": [
+                "Device",
+                "ForeignGroup",
+                "Group",
+                "ServicePrincipal",
+                "User"
+              ],
+              "metadata": {
+                "description": "Principal type"
+              }
+            },
+            "roleAssignmentDescription": {
+              "type": "string",
+              "defaultValue": "",
+              "metadata": {
+                "description": "Description for the role assignment"
+              }
+            }
+          },
+          "variables": {
+            "roleAssignmentName": "[guid(resourceGroup().id, parameters('principalId'), parameters('roleDefinitionId'))]"
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Authorization/roleAssignments",
+              "apiVersion": "2022-04-01",
+              "name": "[variables('roleAssignmentName')]",
+              "properties": {
+                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', parameters('roleDefinitionId'))]",
+                "principalId": "[parameters('principalId')]",
+                "principalType": "[parameters('principalType')]",
+                "description": "[if(not(empty(parameters('roleAssignmentDescription'))), parameters('roleAssignmentDescription'), null())]"
+              }
+            }
+          ],
+          "outputs": {
+            "id": {
+              "type": "string",
+              "metadata": {
+                "description": "Role assignment resource ID"
+              },
+              "value": "[resourceId('Microsoft.Authorization/roleAssignments', variables('roleAssignmentName'))]"
+            },
+            "name": {
+              "type": "string",
+              "metadata": {
+                "description": "Role assignment name"
+              },
+              "value": "[variables('roleAssignmentName')]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "functionAppNew",
+        "rg"
+      ]
+    },
+    "cosmosRoleNew": {
+      "condition": "[and(equals(parameters('deploymentMode'), 'new'), variables('shouldDeployFunctionApp'))]",
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "cosmos-role-new",
+      "resourceGroup": "[parameters('resourceGroupName')]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "cosmosAccountName": {
+            "value": "[reference('cosmosNew').outputs.name.value]"
+          },
+          "principalId": {
+            "value": "[reference('functionAppNew').outputs.principalId.value]"
+          },
+          "roleDefinitionId": {
+            "value": "00000000-0000-0000-0000-000000000002"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.39.26.7824",
+              "templateHash": "16424168948605481683"
+            }
+          },
+          "parameters": {
+            "cosmosAccountName": {
+              "type": "string",
+              "metadata": {
+                "description": "Name of the Cosmos DB account"
+              }
+            },
+            "principalId": {
+              "type": "string",
+              "metadata": {
+                "description": "Principal ID (Object ID) of the identity to assign the role to"
+              }
+            },
+            "roleDefinitionId": {
+              "type": "string",
+              "defaultValue": "00000000-0000-0000-0000-000000000002",
+              "allowedValues": [
+                "00000000-0000-0000-0000-000000000001",
+                "00000000-0000-0000-0000-000000000002"
+              ],
+              "metadata": {
+                "description": "Cosmos DB built-in role definition ID (just the GUID part)"
+              }
+            },
+            "scope": {
+              "type": "string",
+              "defaultValue": "",
+              "metadata": {
+                "description": "Scope for the role assignment. Defaults to the account level. Can be more specific like /dbs/{db} or /dbs/{db}/colls/{container}"
+              }
+            }
+          },
+          "variables": {
+            "fullRoleDefinitionId": "[format('{0}/sqlRoleDefinitions/{1}', resourceId('Microsoft.DocumentDB/databaseAccounts', parameters('cosmosAccountName')), parameters('roleDefinitionId'))]",
+            "effectiveScope": "[if(not(equals(parameters('scope'), '')), format('{0}{1}', resourceId('Microsoft.DocumentDB/databaseAccounts', parameters('cosmosAccountName')), parameters('scope')), resourceId('Microsoft.DocumentDB/databaseAccounts', parameters('cosmosAccountName')))]",
+            "roleAssignmentName": "[guid(resourceId('Microsoft.DocumentDB/databaseAccounts', parameters('cosmosAccountName')), parameters('principalId'), parameters('roleDefinitionId'))]"
+          },
+          "resources": [
+            {
+              "type": "Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments",
+              "apiVersion": "2024-11-15",
+              "name": "[format('{0}/{1}', parameters('cosmosAccountName'), variables('roleAssignmentName'))]",
+              "properties": {
+                "principalId": "[parameters('principalId')]",
+                "roleDefinitionId": "[variables('fullRoleDefinitionId')]",
+                "scope": "[variables('effectiveScope')]"
+              }
+            }
+          ],
+          "outputs": {
+            "id": {
+              "type": "string",
+              "metadata": {
+                "description": "Role assignment resource ID"
+              },
+              "value": "[resourceId('Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments', parameters('cosmosAccountName'), variables('roleAssignmentName'))]"
+            },
+            "name": {
+              "type": "string",
+              "metadata": {
+                "description": "Role assignment name"
+              },
+              "value": "[variables('roleAssignmentName')]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "cosmosNew",
+        "functionAppNew",
+        "rg"
+      ]
+    },
+    "synapseStorageRole": {
+      "condition": "[equals(parameters('deploymentMode'), 'new')]",
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "synapse-storage-role",
+      "resourceGroup": "[parameters('resourceGroupName')]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "principalId": {
+            "value": "[reference('synapseNew').outputs.principalId.value]"
+          },
+          "roleDefinitionId": {
+            "value": "ba92f5b4-2d11-453d-a403-e96b0029c9fe"
+          },
+          "principalType": {
+            "value": "ServicePrincipal"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.39.26.7824",
+              "templateHash": "14008953457204738426"
+            }
+          },
+          "parameters": {
+            "principalId": {
+              "type": "string",
+              "metadata": {
+                "description": "Principal ID to assign the role to"
+              }
+            },
+            "roleDefinitionId": {
+              "type": "string",
+              "metadata": {
+                "description": "Role definition ID (GUID)"
+              }
+            },
+            "principalType": {
+              "type": "string",
+              "defaultValue": "ServicePrincipal",
+              "allowedValues": [
+                "Device",
+                "ForeignGroup",
+                "Group",
+                "ServicePrincipal",
+                "User"
+              ],
+              "metadata": {
+                "description": "Principal type"
+              }
+            },
+            "roleAssignmentDescription": {
+              "type": "string",
+              "defaultValue": "",
+              "metadata": {
+                "description": "Description for the role assignment"
+              }
+            }
+          },
+          "variables": {
+            "roleAssignmentName": "[guid(resourceGroup().id, parameters('principalId'), parameters('roleDefinitionId'))]"
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Authorization/roleAssignments",
+              "apiVersion": "2022-04-01",
+              "name": "[variables('roleAssignmentName')]",
+              "properties": {
+                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', parameters('roleDefinitionId'))]",
+                "principalId": "[parameters('principalId')]",
+                "principalType": "[parameters('principalType')]",
+                "description": "[if(not(empty(parameters('roleAssignmentDescription'))), parameters('roleAssignmentDescription'), null())]"
+              }
+            }
+          ],
+          "outputs": {
+            "id": {
+              "type": "string",
+              "metadata": {
+                "description": "Role assignment resource ID"
+              },
+              "value": "[resourceId('Microsoft.Authorization/roleAssignments', variables('roleAssignmentName'))]"
+            },
+            "name": {
+              "type": "string",
+              "metadata": {
+                "description": "Role assignment name"
+              },
+              "value": "[variables('roleAssignmentName')]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "rg",
+        "synapseNew"
+      ]
+    },
+    "keyVaultRoleExisting": {
+      "condition": "[and(equals(parameters('deploymentMode'), 'existing'), variables('shouldDeployFunctionApp'))]",
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "keyvault-role-existing",
+      "resourceGroup": "[variables('effectiveKeyVaultRg')]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "principalId": {
+            "value": "[reference('functionAppExisting').outputs.principalId.value]"
+          },
+          "roleDefinitionId": {
+            "value": "4633458b-17de-408a-b874-0445c86b69e6"
+          },
+          "principalType": {
+            "value": "ServicePrincipal"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.39.26.7824",
+              "templateHash": "14008953457204738426"
+            }
+          },
+          "parameters": {
+            "principalId": {
+              "type": "string",
+              "metadata": {
+                "description": "Principal ID to assign the role to"
+              }
+            },
+            "roleDefinitionId": {
+              "type": "string",
+              "metadata": {
+                "description": "Role definition ID (GUID)"
+              }
+            },
+            "principalType": {
+              "type": "string",
+              "defaultValue": "ServicePrincipal",
+              "allowedValues": [
+                "Device",
+                "ForeignGroup",
+                "Group",
+                "ServicePrincipal",
+                "User"
+              ],
+              "metadata": {
+                "description": "Principal type"
+              }
+            },
+            "roleAssignmentDescription": {
+              "type": "string",
+              "defaultValue": "",
+              "metadata": {
+                "description": "Description for the role assignment"
+              }
+            }
+          },
+          "variables": {
+            "roleAssignmentName": "[guid(resourceGroup().id, parameters('principalId'), parameters('roleDefinitionId'))]"
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Authorization/roleAssignments",
+              "apiVersion": "2022-04-01",
+              "name": "[variables('roleAssignmentName')]",
+              "properties": {
+                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', parameters('roleDefinitionId'))]",
+                "principalId": "[parameters('principalId')]",
+                "principalType": "[parameters('principalType')]",
+                "description": "[if(not(empty(parameters('roleAssignmentDescription'))), parameters('roleAssignmentDescription'), null())]"
+              }
+            }
+          ],
+          "outputs": {
+            "id": {
+              "type": "string",
+              "metadata": {
+                "description": "Role assignment resource ID"
+              },
+              "value": "[resourceId('Microsoft.Authorization/roleAssignments', variables('roleAssignmentName'))]"
+            },
+            "name": {
+              "type": "string",
+              "metadata": {
+                "description": "Role assignment name"
+              },
+              "value": "[variables('roleAssignmentName')]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "functionAppExisting"
+      ]
+    },
+    "cosmosRoleExisting": {
+      "condition": "[and(equals(parameters('deploymentMode'), 'existing'), variables('shouldDeployFunctionApp'))]",
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "cosmos-role-existing",
+      "resourceGroup": "[variables('effectiveCosmosRg')]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "cosmosAccountName": {
+            "value": "[parameters('existingCosmosAccountName')]"
+          },
+          "principalId": {
+            "value": "[reference('functionAppExisting').outputs.principalId.value]"
+          },
+          "roleDefinitionId": {
+            "value": "00000000-0000-0000-0000-000000000002"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.39.26.7824",
+              "templateHash": "16424168948605481683"
+            }
+          },
+          "parameters": {
+            "cosmosAccountName": {
+              "type": "string",
+              "metadata": {
+                "description": "Name of the Cosmos DB account"
+              }
+            },
+            "principalId": {
+              "type": "string",
+              "metadata": {
+                "description": "Principal ID (Object ID) of the identity to assign the role to"
+              }
+            },
+            "roleDefinitionId": {
+              "type": "string",
+              "defaultValue": "00000000-0000-0000-0000-000000000002",
+              "allowedValues": [
+                "00000000-0000-0000-0000-000000000001",
+                "00000000-0000-0000-0000-000000000002"
+              ],
+              "metadata": {
+                "description": "Cosmos DB built-in role definition ID (just the GUID part)"
+              }
+            },
+            "scope": {
+              "type": "string",
+              "defaultValue": "",
+              "metadata": {
+                "description": "Scope for the role assignment. Defaults to the account level. Can be more specific like /dbs/{db} or /dbs/{db}/colls/{container}"
+              }
+            }
+          },
+          "variables": {
+            "fullRoleDefinitionId": "[format('{0}/sqlRoleDefinitions/{1}', resourceId('Microsoft.DocumentDB/databaseAccounts', parameters('cosmosAccountName')), parameters('roleDefinitionId'))]",
+            "effectiveScope": "[if(not(equals(parameters('scope'), '')), format('{0}{1}', resourceId('Microsoft.DocumentDB/databaseAccounts', parameters('cosmosAccountName')), parameters('scope')), resourceId('Microsoft.DocumentDB/databaseAccounts', parameters('cosmosAccountName')))]",
+            "roleAssignmentName": "[guid(resourceId('Microsoft.DocumentDB/databaseAccounts', parameters('cosmosAccountName')), parameters('principalId'), parameters('roleDefinitionId'))]"
+          },
+          "resources": [
+            {
+              "type": "Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments",
+              "apiVersion": "2024-11-15",
+              "name": "[format('{0}/{1}', parameters('cosmosAccountName'), variables('roleAssignmentName'))]",
+              "properties": {
+                "principalId": "[parameters('principalId')]",
+                "roleDefinitionId": "[variables('fullRoleDefinitionId')]",
+                "scope": "[variables('effectiveScope')]"
+              }
+            }
+          ],
+          "outputs": {
+            "id": {
+              "type": "string",
+              "metadata": {
+                "description": "Role assignment resource ID"
+              },
+              "value": "[resourceId('Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments', parameters('cosmosAccountName'), variables('roleAssignmentName'))]"
+            },
+            "name": {
+              "type": "string",
+              "metadata": {
+                "description": "Role assignment name"
+              },
+              "value": "[variables('roleAssignmentName')]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "functionAppExisting"
+      ]
+    }
+  },
+  "outputs": {
+    "resourceGroupName": {
+      "type": "string",
+      "metadata": {
+        "description": "Resource group name"
+      },
+      "value": "[parameters('resourceGroupName')]"
+    },
+    "storageAccountName": {
+      "type": "string",
+      "metadata": {
+        "description": "Storage account name"
+      },
+      "value": "[if(equals(parameters('deploymentMode'), 'new'), reference('storageNew').outputs.name.value, parameters('existingStorageAccountName'))]"
+    },
+    "storageBlobEndpoint": {
+      "type": "string",
+      "metadata": {
+        "description": "Storage account blob endpoint"
+      },
+      "value": "[if(equals(parameters('deploymentMode'), 'new'), reference('storageNew').outputs.primaryBlobEndpoint.value, reference('existingStorage').primaryEndpoints.blob)]"
+    },
+    "documentIntelligenceEndpoint": {
+      "type": "string",
+      "metadata": {
+        "description": "Document Intelligence endpoint"
+      },
+      "value": "[if(equals(parameters('deploymentMode'), 'new'), reference('docIntelNew').outputs.endpoint.value, reference('existingDocIntel').endpoint)]"
+    },
+    "cosmosDbEndpoint": {
+      "type": "string",
+      "metadata": {
+        "description": "Cosmos DB endpoint"
+      },
+      "value": "[if(equals(parameters('deploymentMode'), 'new'), reference('cosmosNew').outputs.endpoint.value, reference('existingCosmos').documentEndpoint)]"
+    },
+    "cosmosDbDatabaseName": {
+      "type": "string",
+      "metadata": {
+        "description": "Cosmos DB database name"
+      },
+      "value": "[parameters('cosmosDatabase')]"
+    },
+    "cosmosDbContainerName": {
+      "type": "string",
+      "metadata": {
+        "description": "Cosmos DB container name"
+      },
+      "value": "[parameters('cosmosContainer')]"
+    },
+    "keyVaultName": {
+      "type": "string",
+      "metadata": {
+        "description": "Key Vault name"
+      },
+      "value": "[if(equals(parameters('deploymentMode'), 'new'), reference('keyVaultNew').outputs.name.value, parameters('existingKeyVaultName'))]"
+    },
+    "functionAppName": {
+      "type": "string",
+      "metadata": {
+        "description": "Function App name"
+      },
+      "value": "[if(equals(parameters('deploymentMode'), 'new'), if(variables('shouldDeployFunctionApp'), reference('functionAppNew').outputs.name.value, 'not-deployed'), if(variables('shouldDeployFunctionApp'), reference('functionAppExisting').outputs.name.value, parameters('existingFunctionAppName')))]"
+    },
+    "functionAppUrl": {
+      "type": "string",
+      "metadata": {
+        "description": "Function App URL"
+      },
+      "value": "[if(equals(parameters('deploymentMode'), 'new'), if(variables('shouldDeployFunctionApp'), reference('functionAppNew').outputs.functionAppUrl.value, ''), if(variables('shouldDeployFunctionApp'), reference('functionAppExisting').outputs.functionAppUrl.value, format('https://{0}', reference('existingFunctionApp').defaultHostName)))]"
+    },
+    "functionAppPrincipalId": {
+      "type": "string",
+      "metadata": {
+        "description": "Function App principal ID"
+      },
+      "value": "[if(equals(parameters('deploymentMode'), 'new'), if(variables('shouldDeployFunctionApp'), reference('functionAppNew').outputs.principalId.value, ''), if(variables('shouldDeployFunctionApp'), reference('functionAppExisting').outputs.principalId.value, ''))]"
+    },
+    "synapseWorkspaceName": {
+      "type": "string",
+      "metadata": {
+        "description": "Synapse workspace name"
+      },
+      "value": "[if(equals(parameters('deploymentMode'), 'new'), reference('synapseNew').outputs.name.value, if(not(equals(parameters('existingSynapseWorkspaceName'), '')), parameters('existingSynapseWorkspaceName'), 'not-deployed'))]"
+    },
+    "synapseDevEndpoint": {
+      "type": "string",
+      "metadata": {
+        "description": "Synapse dev endpoint"
+      },
+      "value": "[if(equals(parameters('deploymentMode'), 'new'), reference('synapseNew').outputs.devEndpoint.value, if(not(equals(parameters('existingSynapseWorkspaceName'), '')), reference('existingSynapse').connectivityEndpoints.dev, ''))]"
+    },
+    "synapseGitHubEnabled": {
+      "type": "bool",
+      "metadata": {
+        "description": "Synapse GitHub integration enabled"
+      },
+      "value": "[if(equals(parameters('deploymentMode'), 'new'), reference('synapseNew').outputs.gitHubIntegrationEnabled.value, false())]"
+    },
+    "logAnalyticsWorkspaceId": {
+      "type": "string",
+      "metadata": {
+        "description": "Log Analytics workspace ID"
+      },
+      "value": "[if(not(parameters('enableDiagnostics')), '', if(equals(parameters('existingLogAnalyticsWorkspaceName'), ''), reference('logAnalyticsNew').outputs.workspaceId.value, if(variables('isLogAnalyticsCrossSubscription'), extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', variables('effectiveLogAnalyticsSubId'), variables('effectiveLogAnalyticsRg')), 'Microsoft.OperationalInsights/workspaces', parameters('existingLogAnalyticsWorkspaceName')), extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('effectiveLogAnalyticsRg')), 'Microsoft.OperationalInsights/workspaces', parameters('existingLogAnalyticsWorkspaceName')))))]"
+    },
+    "diagnosticsEnabled": {
+      "type": "bool",
+      "metadata": {
+        "description": "Diagnostics enabled"
+      },
+      "value": "[parameters('enableDiagnostics')]"
+    },
+    "appServicePlanSkuOutput": {
+      "type": "string",
+      "metadata": {
+        "description": "App Service Plan SKU"
+      },
+      "value": "[parameters('appServicePlanSku')]"
+    }
+  }
+}

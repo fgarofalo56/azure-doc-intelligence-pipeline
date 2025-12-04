@@ -1,0 +1,19 @@
+{
+  "name": "LS_CosmosDB",
+  "type": "Microsoft.Synapse/workspaces/linkedservices",
+  "properties": {
+    "description": "Cosmos DB linked service for document results storage",
+    "annotations": [
+      "document-processing"
+    ],
+    "type": "CosmosDb",
+    "typeProperties": {
+      "accountEndpoint": "<REPLACE_WITH_COSMOS_DB_ENDPOINT>",
+      "database": "DocumentsDB"
+    },
+    "connectVia": {
+      "referenceName": "AutoResolveIntegrationRuntime",
+      "type": "IntegrationRuntimeReference"
+    }
+  }
+}

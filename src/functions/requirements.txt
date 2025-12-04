@@ -1,0 +1,24 @@
+# Azure Functions runtime
+azure-functions>=1.21.0
+
+# Document Intelligence SDK (with async support)
+# CRITICAL: Use azure-ai-documentintelligence, NOT azure-ai-formrecognizer (deprecated)
+azure-ai-documentintelligence[aio]>=1.0.0
+
+# Cosmos DB SDK (with async support)
+azure-cosmos[aio]>=4.7.0
+
+# Azure Identity for managed identity authentication
+azure-identity[aio]>=1.19.0
+
+# Azure Storage for blob operations
+azure-storage-blob>=12.19.0
+
+# Azure Key Vault for secrets
+azure-keyvault-secrets>=4.8.0
+
+# Async HTTP client (required for async SDK support)
+aiohttp>=3.10.0
+
+# PDF manipulation for splitting multi-page PDFs
+pypdf>=4.0.0

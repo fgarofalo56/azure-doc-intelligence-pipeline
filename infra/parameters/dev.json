@@ -1,0 +1,56 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "resourceGroupName": {
+      "value": "rg-docprocessing-dev"
+    },
+    "location": {
+      "value": "eastus"
+    },
+    "deploymentMode": {
+      "value": "new"
+    },
+    "prefix": {
+      "value": "docproc"
+    },
+    "environment": {
+      "value": "dev"
+    },
+    "tags": {
+      "value": {
+        "project": "document-processing",
+        "environment": "dev",
+        "deployedBy": "bicep",
+        "costCenter": "development"
+      }
+    },
+    "cosmosDatabase": {
+      "value": "DocumentsDB"
+    },
+    "cosmosContainer": {
+      "value": "ExtractedDocuments"
+    },
+    "deployFunctionApp": {
+      "value": true
+    },
+    "appServicePlanSku": {
+      "value": "Y1"
+    },
+    "enableDiagnostics": {
+      "value": true
+    },
+    "existingLogAnalyticsWorkspaceName": {
+      "value": ""
+    },
+    "logAnalyticsRetentionDays": {
+      "value": 30
+    },
+    "logAnalyticsSku": {
+      "value": "PerGB2018"
+    },
+    "enableSynapseGitHubIntegration": {
+      "value": false
+    }
+  }
+}

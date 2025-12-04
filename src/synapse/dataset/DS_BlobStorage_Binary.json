@@ -1,0 +1,39 @@
+{
+  "name": "DS_BlobStorage_Binary",
+  "properties": {
+    "description": "Binary dataset for blob storage files (used by GetMetadata activity)",
+    "linkedServiceName": {
+      "referenceName": "LS_AzureBlobStorage",
+      "type": "LinkedServiceReference"
+    },
+    "parameters": {
+      "folderPath": {
+        "type": "string"
+      },
+      "container": {
+        "type": "string"
+      }
+    },
+    "folder": {
+      "name": "DocumentProcessing"
+    },
+    "annotations": [
+      "document-processing",
+      "binary"
+    ],
+    "type": "Binary",
+    "typeProperties": {
+      "location": {
+        "type": "AzureBlobStorageLocation",
+        "folderPath": {
+          "value": "@dataset().folderPath",
+          "type": "Expression"
+        },
+        "container": {
+          "value": "@dataset().container",
+          "type": "Expression"
+        }
+      }
+    }
+  }
+}

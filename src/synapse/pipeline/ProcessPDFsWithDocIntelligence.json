@@ -1,0 +1,153 @@
+{
+  "name": "ProcessPDFsWithDocIntelligence",
+  "properties": {
+    "description": "Orchestrate PDF processing through Document Intelligence. Discovers PDFs in blob storage, filters by extension, and processes each through Azure Function.",
+    "activities": [
+      {
+        "name": "GetPDFFileList",
+        "description": "List all files in the source folder",
+        "type": "GetMetadata",
+        "dependsOn": [],
+        "policy": {
+          "timeout": "0:10:00",
+          "retry": 0,
+          "retryIntervalInSeconds": 30,
+          "secureOutput": false,
+          "secureInput": false
+        },
+        "userProperties": [],
+        "typeProperties": {
+          "dataset": {
+            "referenceName": "DS_BlobStorage_Binary",
+            "type": "DatasetReference",
+            "parameters": {
+              "folderPath": {
+                "value": "@pipeline().parameters.sourceFolderPath",
+                "type": "Expression"
+              },
+              "container": {
+                "value": "@pipeline().parameters.containerName",
+                "type": "Expression"
+              }
+            }
+          },
+          "fieldList": [
+            "childItems"
+          ],
+          "storeSettings": {
+            "type": "AzureBlobStorageReadSettings",
+            "recursive": false,
+            "enablePartitionDiscovery": false
+          }
+        }
+      },
+      {
+        "name": "FilterPDFFiles",
+        "description": "Filter to only PDF files",
+        "type": "Filter",
+        "dependsOn": [
+          {
+            "activity": "GetPDFFileList",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          }
+        ],
+        "userProperties": [],
+        "typeProperties": {
+          "items": {
+            "value": "@activity('GetPDFFileList').output.childItems",
+            "type": "Expression"
+          },
+          "condition": {
+            "value": "@and(equals(item().type, 'File'), endswith(toLower(item().name), '.pdf'))",
+            "type": "Expression"
+          }
+        }
+      },
+      {
+        "name": "ForEachPDF",
+        "description": "Process each PDF through Document Intelligence",
+        "type": "ForEach",
+        "dependsOn": [
+          {
+            "activity": "FilterPDFFiles",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          }
+        ],
+        "userProperties": [],
+        "typeProperties": {
+          "items": {
+            "value": "@activity('FilterPDFFiles').output.value",
+            "type": "Expression"
+          },
+          "isSequential": false,
+          "batchCount": 10,
+          "activities": [
+            {
+              "name": "ProcessDocument",
+              "description": "Call Azure Function to process PDF with Document Intelligence",
+              "type": "AzureFunctionActivity",
+              "dependsOn": [],
+              "policy": {
+                "timeout": "0:10:00",
+                "retry": 2,
+                "retryIntervalInSeconds": 60,
+                "secureOutput": false,
+                "secureInput": false
+              },
+              "userProperties": [],
+              "typeProperties": {
+                "functionName": "process",
+                "method": "POST",
+                "headers": {
+                  "Content-Type": "application/json",
+                  "x-correlation-id": {
+                    "value": "@{pipeline().RunId}",
+                    "type": "Expression"
+                  }
+                },
+                "body": {
+                  "value": "@json(concat('{\"blobUrl\":\"', pipeline().parameters.storageAccountUrl, '/', pipeline().parameters.containerName, '/', replace(pipeline().parameters.sourceFolderPath, ' ', '%20'), '/', encodeUriComponent(item().name), '\",\"blobName\":\"', pipeline().parameters.sourceFolderPath, '/', item().name, '\",\"modelId\":\"', pipeline().parameters.modelId, '\"}'))",
+                  "type": "Expression"
+                }
+              },
+              "linkedServiceName": {
+                "referenceName": "LS_AzureFunction",
+                "type": "LinkedServiceReference"
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "parameters": {
+      "containerName": {
+        "type": "string",
+        "defaultValue": "pdfs"
+      },
+      "sourceFolderPath": {
+        "type": "string",
+        "defaultValue": "incoming"
+      },
+      "storageAccountUrl": {
+        "type": "string",
+        "defaultValue": ""
+      },
+      "modelId": {
+        "type": "string",
+        "defaultValue": "prebuilt-layout"
+      }
+    },
+    "folder": {
+      "name": "DocumentProcessing"
+    },
+    "annotations": [
+      "document-intelligence",
+      "pdf-processing",
+      "batch"
+    ]
+  }
+}

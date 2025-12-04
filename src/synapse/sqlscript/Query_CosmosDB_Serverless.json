@@ -1,0 +1,20 @@
+{
+  "name": "Query_CosmosDB_Serverless",
+  "properties": {
+    "description": "SQL Serverless queries for Cosmos DB analytical store via Synapse Link",
+    "content": {
+      "query": "-- ============================================\n-- Query Cosmos DB via Synapse Link (SQL Serverless)\n-- ============================================\n\n-- Prerequisites:\n-- 1. Create a credential for Cosmos DB account key\n-- 2. Create an OPENROWSET view for the container\n\n-- Step 1: Create database-scoped credential (run once)\n-- Replace <COSMOS_ACCOUNT_KEY> with your actual key\n/*\nCREATE DATABASE SCOPED CREDENTIAL CosmosDBCredential\nWITH IDENTITY = 'SHARED ACCESS SIGNATURE',\n    SECRET = '<COSMOS_ACCOUNT_KEY>';\n*/\n\n-- Step 2: Query Cosmos DB analytical store using OPENROWSET\n-- Replace <COSMOS_ACCOUNT> with your Cosmos DB account name\n\n-- Basic document count and schema exploration\nSELECT TOP 100 *\nFROM OPENROWSET(\n    'CosmosDB',\n    'Account=<COSMOS_ACCOUNT>;Database=DocumentsDB;Key=<COSMOS_ACCOUNT_KEY>',\n    ExtractedDocuments\n) AS documents;\n\n-- Document count by status\nSELECT \n    documents.status,\n    COUNT(*) AS document_count\nFROM OPENROWSET(\n    'CosmosDB',\n    'Account=<COSMOS_ACCOUNT>;Database=DocumentsDB;Key=<COSMOS_ACCOUNT_KEY>',\n    ExtractedDocuments\n) AS documents\nGROUP BY documents.status\nORDER BY document_count DESC;\n\n-- Documents processed per day with confidence metrics\nSELECT \n    CAST(documents.processedAt AS DATE) AS processed_date,\n    COUNT(*) AS documents_processed,\n    AVG(CAST(documents.modelConfidence AS FLOAT)) AS avg_confidence,\n    MIN(CAST(documents.modelConfidence AS FLOAT)) AS min_confidence,\n    MAX(CAST(documents.modelConfidence AS FLOAT)) AS max_confidence\nFROM OPENROWSET(\n    'CosmosDB',\n    'Account=<COSMOS_ACCOUNT>;Database=DocumentsDB;Key=<COSMOS_ACCOUNT_KEY>',\n    ExtractedDocuments\n) AS documents\nWHERE documents.processedAt IS NOT NULL\nGROUP BY CAST(documents.processedAt AS DATE)\nORDER BY processed_date DESC;\n\n-- Model performance analysis\nSELECT \n    documents.modelId,\n    documents.docType,\n    COUNT(*) AS total_documents,\n    AVG(CAST(documents.modelConfidence AS FLOAT)) AS avg_confidence,\n    SUM(CASE WHEN CAST(documents.modelConfidence AS FLOAT) >= 0.9 THEN 1 ELSE 0 END) AS high_confidence_count,\n    SUM(CASE WHEN CAST(documents.modelConfidence AS FLOAT) < 0.8 THEN 1 ELSE 0 END) AS low_confidence_count\nFROM OPENROWSET(\n    'CosmosDB',\n    'Account=<COSMOS_ACCOUNT>;Database=DocumentsDB;Key=<COSMOS_ACCOUNT_KEY>',\n    ExtractedDocuments\n) AS documents\nWHERE documents.status = 'completed'\nGROUP BY documents.modelId, documents.docType\nORDER BY total_documents DESC;\n\n-- Find documents needing review (low confidence)\nSELECT \n    documents.id,\n    documents.sourceFile,\n    documents.modelId,\n    documents.modelConfidence,\n    documents.status,\n    documents.processedAt\nFROM OPENROWSET(\n    'CosmosDB',\n    'Account=<COSMOS_ACCOUNT>;Database=DocumentsDB;Key=<COSMOS_ACCOUNT_KEY>',\n    ExtractedDocuments\n) AS documents\nWHERE CAST(documents.modelConfidence AS FLOAT) < 0.8\nORDER BY documents.modelConfidence ASC;",
+      "metadata": {
+        "language": "sql"
+      },
+      "currentConnection": {
+        "databaseName": "master",
+        "poolName": "Built-in"
+      }
+    },
+    "type": "SqlQuery",
+    "folder": {
+      "name": "DocumentProcessing/Analytics"
+    }
+  }
+}

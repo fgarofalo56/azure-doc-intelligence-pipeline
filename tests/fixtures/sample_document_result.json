@@ -1,0 +1,51 @@
+{
+  "id": "incoming_invoice_001_pdf",
+  "sourceFile": "incoming/invoice_001.pdf",
+  "processedAt": "2024-01-15T10:30:00Z",
+  "modelId": "custom-invoice-model-v1",
+  "modelConfidence": 0.95,
+  "docType": "invoice",
+  "fields": {
+    "vendorName": "Acme Corporation",
+    "vendorAddress": {
+      "streetAddress": "123 Main Street",
+      "city": "Seattle",
+      "state": "WA",
+      "postalCode": "98101",
+      "country": "USA"
+    },
+    "invoiceNumber": "INV-2024-0001",
+    "invoiceDate": "2024-01-15",
+    "dueDate": "2024-02-15",
+    "subtotal": 1250.00,
+    "tax": 112.50,
+    "total": 1362.50,
+    "items": [
+      {
+        "description": "Professional Services",
+        "quantity": 10,
+        "unitPrice": 100.00,
+        "amount": 1000.00
+      },
+      {
+        "description": "Materials",
+        "quantity": 5,
+        "unitPrice": 50.00,
+        "amount": 250.00
+      }
+    ]
+  },
+  "confidence": {
+    "vendorName": 0.98,
+    "vendorAddress": 0.92,
+    "invoiceNumber": 0.99,
+    "invoiceDate": 0.97,
+    "dueDate": 0.96,
+    "subtotal": 0.95,
+    "tax": 0.94,
+    "total": 0.98,
+    "items": 0.91
+  },
+  "status": "completed",
+  "error": null
+}

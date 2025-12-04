@@ -1,0 +1,15 @@
+{
+  "name": "LS_KeyVault",
+  "type": "Microsoft.Synapse/workspaces/linkedservices",
+  "properties": {
+    "description": "Azure Key Vault linked service for secrets management",
+    "annotations": [
+      "document-processing",
+      "secrets"
+    ],
+    "type": "AzureKeyVault",
+    "typeProperties": {
+      "baseUrl": "<REPLACE_WITH_KEY_VAULT_URL>"
+    }
+  }
+}

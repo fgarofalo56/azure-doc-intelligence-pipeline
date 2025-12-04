@@ -1,0 +1,454 @@
+{
+  "name": "DeltaLake_Medallion_Architecture",
+  "properties": {
+    "description": "Build a Delta Lake database using Cosmos DB data as the raw source (Bronze layer) and transform to Silver layer for easy querying. Uses medallion architecture pattern.",
+    "nbformat": 4,
+    "nbformat_minor": 2,
+    "bigDataPool": {
+      "referenceName": "sparkpool",
+      "type": "BigDataPoolReference"
+    },
+    "sessionProperties": {
+      "driverMemory": "28g",
+      "driverCores": 4,
+      "executorMemory": "28g",
+      "executorCores": 4,
+      "numExecutors": 2,
+      "conf": {
+        "spark.dynamicAllocation.enabled": "false",
+        "spark.dynamicAllocation.minExecutors": "2",
+        "spark.dynamicAllocation.maxExecutors": "2"
+      }
+    },
+    "metadata": {
+      "saveOutput": true,
+      "enableDebugMode": false,
+      "kernelspec": {
+        "name": "synapse_pyspark",
+        "display_name": "Synapse PySpark"
+      },
+      "language_info": {
+        "name": "python"
+      }
+    },
+    "cells": [
+      {
+        "cell_type": "markdown",
+        "metadata": {},
+        "source": [
+          "# Delta Lake Medallion Architecture\n",
+          "\n",
+          "This notebook implements a medallion architecture (Bronze → Silver) using Cosmos DB data via Synapse Link.\n",
+          "\n",
+          "## Architecture Overview\n",
+          "- **Bronze Layer (Raw)**: Raw data from Cosmos DB analytical store - preserves original structure\n",
+          "- **Silver Layer (Curated)**: Cleaned, flattened, and enriched data optimized for analytics\n",
+          "\n",
+          "## Prerequisites\n",
+          "1. Cosmos DB account with Synapse Link enabled\n",
+          "2. Container with analytical store TTL configured\n",
+          "3. Linked service `LS_CosmosDB` configured in Synapse\n",
+          "4. Azure Data Lake Storage Gen2 for Delta Lake tables"
+        ]
+      },
+      {
+        "cell_type": "markdown",
+        "metadata": {},
+        "source": [
+          "## Configuration"
+        ]
+      },
+      {
+        "cell_type": "code",
+        "metadata": {},
+        "source": [
+          "# Configuration - Update these values\n",
+          "cosmos_linked_service = \"LS_CosmosDB\"\n",
+          "cosmos_container = \"ExtractedDocuments\"\n",
+          "\n",
+          "# Delta Lake storage configuration\n",
+          "# Use your primary ADLS Gen2 storage account\n",
+          "delta_lake_path = \"abfss://delta@<STORAGE_ACCOUNT>.dfs.core.windows.net\"\n",
+          "bronze_path = f\"{delta_lake_path}/bronze/extracted_documents\"\n",
+          "silver_path = f\"{delta_lake_path}/silver/documents\"\n",
+          "\n",
+          "# Database names\n",
+          "database_name = \"document_analytics\"\n",
+          "\n",
+          "print(f\"Bronze Layer: {bronze_path}\")\n",
+          "print(f\"Silver Layer: {silver_path}\")"
+        ],
+        "outputs": [],
+        "execution_count": null
+      },
+      {
+        "cell_type": "markdown",
+        "metadata": {},
+        "source": [
+          "## Create Database"
+        ]
+      },
+      {
+        "cell_type": "code",
+        "metadata": {},
+        "source": [
+          "# Create the Delta Lake database\n",
+          "spark.sql(f\"CREATE DATABASE IF NOT EXISTS {database_name}\")\n",
+          "spark.sql(f\"USE {database_name}\")\n",
+          "print(f\"Using database: {database_name}\")"
+        ],
+        "outputs": [],
+        "execution_count": null
+      },
+      {
+        "cell_type": "markdown",
+        "metadata": {},
+        "source": [
+          "## Bronze Layer: Raw Data from Cosmos DB\n",
+          "\n",
+          "The Bronze layer preserves the raw data from Cosmos DB with minimal transformation."
+        ]
+      },
+      {
+        "cell_type": "code",
+        "metadata": {},
+        "source": [
+          "# Read raw data from Cosmos DB analytical store\n",
+          "df_raw = spark.read \\\n",
+          "    .format(\"cosmos.olap\") \\\n",
+          "    .option(\"spark.synapse.linkedService\", cosmos_linked_service) \\\n",
+          "    .option(\"spark.cosmos.container\", cosmos_container) \\\n",
+          "    .load()\n",
+          "\n",
+          "print(f\"Total raw documents: {df_raw.count()}\")\n",
+          "df_raw.printSchema()"
+        ],
+        "outputs": [],
+        "execution_count": null
+      },
+      {
+        "cell_type": "code",
+        "metadata": {},
+        "source": [
+          "from pyspark.sql.functions import current_timestamp, lit\n",
+          "\n",
+          "# Add ingestion metadata for Bronze layer\n",
+          "df_bronze = df_raw \\\n",
+          "    .withColumn(\"_bronze_ingested_at\", current_timestamp()) \\\n",
+          "    .withColumn(\"_bronze_source\", lit(\"cosmos_synapse_link\"))\n",
+          "\n",
+          "# Write to Bronze layer as Delta table\n",
+          "df_bronze.write \\\n",
+          "    .format(\"delta\") \\\n",
+          "    .mode(\"overwrite\") \\\n",
+          "    .option(\"overwriteSchema\", \"true\") \\\n",
+          "    .save(bronze_path)\n",
+          "\n",
+          "print(f\"Bronze layer written to: {bronze_path}\")"
+        ],
+        "outputs": [],
+        "execution_count": null
+      },
+      {
+        "cell_type": "code",
+        "metadata": {},
+        "source": [
+          "# Create Bronze table in metastore\n",
+          "spark.sql(f\"\"\"\n",
+          "    CREATE TABLE IF NOT EXISTS bronze_extracted_documents\n",
+          "    USING DELTA\n",
+          "    LOCATION '{bronze_path}'\n",
+          "\"\"\")\n",
+          "\n",
+          "print(\"Bronze table created: bronze_extracted_documents\")\n",
+          "spark.sql(\"DESCRIBE TABLE bronze_extracted_documents\").show(truncate=False)"
+        ],
+        "outputs": [],
+        "execution_count": null
+      },
+      {
+        "cell_type": "markdown",
+        "metadata": {},
+        "source": [
+          "## Silver Layer: Curated and Flattened Data\n",
+          "\n",
+          "The Silver layer transforms the raw data into a clean, tabular format optimized for analytics."
+        ]
+      },
+      {
+        "cell_type": "code",
+        "metadata": {},
+        "source": [
+          "from pyspark.sql.functions import col, explode_outer, to_timestamp, when, coalesce\n",
+          "from pyspark.sql.types import DoubleType\n",
+          "\n",
+          "# Read from Bronze layer\n",
+          "df_bronze_read = spark.read.format(\"delta\").load(bronze_path)\n",
+          "\n",
+          "# Create Silver layer with flattened structure\n",
+          "df_silver = df_bronze_read.select(\n",
+          "    # Document identifiers\n",
+          "    col(\"id\").alias(\"document_id\"),\n",
+          "    col(\"sourceFile\").alias(\"source_file\"),\n",
+          "    \n",
+          "    # Processing metadata\n",
+          "    to_timestamp(col(\"processedAt\")).alias(\"processed_at\"),\n",
+          "    col(\"status\"),\n",
+          "    col(\"error\").alias(\"error_message\"),\n",
+          "    \n",
+          "    # Model information\n",
+          "    col(\"modelId\").alias(\"model_id\"),\n",
+          "    col(\"modelConfidence\").cast(DoubleType()).alias(\"model_confidence\"),\n",
+          "    col(\"docType\").alias(\"document_type\"),\n",
+          "    \n",
+          "    # Keep fields as JSON string for flexibility\n",
+          "    col(\"fields\").cast(\"string\").alias(\"extracted_fields_json\"),\n",
+          "    col(\"confidence\").cast(\"string\").alias(\"field_confidence_json\"),\n",
+          "    \n",
+          "    # Audit columns\n",
+          "    col(\"_bronze_ingested_at\"),\n",
+          "    col(\"_bronze_source\")\n",
+          ")\n",
+          "\n",
+          "# Add Silver layer metadata\n",
+          "df_silver = df_silver \\\n",
+          "    .withColumn(\"_silver_transformed_at\", current_timestamp()) \\\n",
+          "    .withColumn(\"_is_valid\", \n",
+          "        when(col(\"status\") == \"completed\", True).otherwise(False))\n",
+          "\n",
+          "df_silver.printSchema()"
+        ],
+        "outputs": [],
+        "execution_count": null
+      },
+      {
+        "cell_type": "code",
+        "metadata": {},
+        "source": [
+          "# Write to Silver layer as Delta table with partitioning\n",
+          "df_silver.write \\\n",
+          "    .format(\"delta\") \\\n",
+          "    .mode(\"overwrite\") \\\n",
+          "    .partitionBy(\"status\", \"document_type\") \\\n",
+          "    .option(\"overwriteSchema\", \"true\") \\\n",
+          "    .save(silver_path)\n",
+          "\n",
+          "print(f\"Silver layer written to: {silver_path}\")"
+        ],
+        "outputs": [],
+        "execution_count": null
+      },
+      {
+        "cell_type": "code",
+        "metadata": {},
+        "source": [
+          "# Create Silver table in metastore\n",
+          "spark.sql(f\"\"\"\n",
+          "    CREATE TABLE IF NOT EXISTS silver_documents\n",
+          "    USING DELTA\n",
+          "    LOCATION '{silver_path}'\n",
+          "\"\"\")\n",
+          "\n",
+          "print(\"Silver table created: silver_documents\")\n",
+          "spark.sql(\"DESCRIBE TABLE silver_documents\").show(truncate=False)"
+        ],
+        "outputs": [],
+        "execution_count": null
+      },
+      {
+        "cell_type": "markdown",
+        "metadata": {},
+        "source": [
+          "## Analytics on Silver Layer"
+        ]
+      },
+      {
+        "cell_type": "code",
+        "metadata": {},
+        "source": [
+          "%%sql\n",
+          "-- Document processing summary\n",
+          "SELECT \n",
+          "    status,\n",
+          "    document_type,\n",
+          "    COUNT(*) as document_count,\n",
+          "    ROUND(AVG(model_confidence), 3) as avg_confidence,\n",
+          "    ROUND(MIN(model_confidence), 3) as min_confidence,\n",
+          "    ROUND(MAX(model_confidence), 3) as max_confidence\n",
+          "FROM silver_documents\n",
+          "GROUP BY status, document_type\n",
+          "ORDER BY document_count DESC"
+        ],
+        "outputs": [],
+        "execution_count": null
+      },
+      {
+        "cell_type": "code",
+        "metadata": {},
+        "source": [
+          "%%sql\n",
+          "-- Daily processing trends\n",
+          "SELECT \n",
+          "    DATE(processed_at) as processing_date,\n",
+          "    COUNT(*) as documents_processed,\n",
+          "    SUM(CASE WHEN _is_valid THEN 1 ELSE 0 END) as successful,\n",
+          "    SUM(CASE WHEN NOT _is_valid THEN 1 ELSE 0 END) as failed,\n",
+          "    ROUND(AVG(model_confidence), 3) as avg_confidence\n",
+          "FROM silver_documents\n",
+          "WHERE processed_at IS NOT NULL\n",
+          "GROUP BY DATE(processed_at)\n",
+          "ORDER BY processing_date DESC\n",
+          "LIMIT 30"
+        ],
+        "outputs": [],
+        "execution_count": null
+      },
+      {
+        "cell_type": "code",
+        "metadata": {},
+        "source": [
+          "%%sql\n",
+          "-- Model performance comparison\n",
+          "SELECT \n",
+          "    model_id,\n",
+          "    COUNT(*) as total_documents,\n",
+          "    ROUND(AVG(model_confidence), 3) as avg_confidence,\n",
+          "    SUM(CASE WHEN model_confidence >= 0.9 THEN 1 ELSE 0 END) as high_confidence_count,\n",
+          "    SUM(CASE WHEN model_confidence < 0.8 THEN 1 ELSE 0 END) as low_confidence_count,\n",
+          "    ROUND(SUM(CASE WHEN model_confidence >= 0.9 THEN 1 ELSE 0 END) * 100.0 / COUNT(*), 1) as high_confidence_pct\n",
+          "FROM silver_documents\n",
+          "WHERE _is_valid = true\n",
+          "GROUP BY model_id\n",
+          "ORDER BY total_documents DESC"
+        ],
+        "outputs": [],
+        "execution_count": null
+      },
+      {
+        "cell_type": "markdown",
+        "metadata": {},
+        "source": [
+          "## Incremental Updates (Merge Pattern)\n",
+          "\n",
+          "Use this pattern for incremental updates instead of full refresh."
+        ]
+      },
+      {
+        "cell_type": "code",
+        "metadata": {},
+        "source": [
+          "from delta.tables import DeltaTable\n",
+          "\n",
+          "def incremental_bronze_update():\n",
+          "    \"\"\"Incrementally update Bronze layer with new Cosmos DB data.\"\"\"\n",
+          "    # Read latest data from Cosmos DB\n",
+          "    df_new = spark.read \\\n",
+          "        .format(\"cosmos.olap\") \\\n",
+          "        .option(\"spark.synapse.linkedService\", cosmos_linked_service) \\\n",
+          "        .option(\"spark.cosmos.container\", cosmos_container) \\\n",
+          "        .load() \\\n",
+          "        .withColumn(\"_bronze_ingested_at\", current_timestamp()) \\\n",
+          "        .withColumn(\"_bronze_source\", lit(\"cosmos_synapse_link\"))\n",
+          "    \n",
+          "    # Merge into Bronze table\n",
+          "    delta_bronze = DeltaTable.forPath(spark, bronze_path)\n",
+          "    \n",
+          "    delta_bronze.alias(\"target\").merge(\n",
+          "        df_new.alias(\"source\"),\n",
+          "        \"target.id = source.id AND target.sourceFile = source.sourceFile\"\n",
+          "    ).whenMatchedUpdateAll() \\\n",
+          "     .whenNotMatchedInsertAll() \\\n",
+          "     .execute()\n",
+          "    \n",
+          "    print(\"Bronze layer incrementally updated\")\n",
+          "\n",
+          "# Uncomment to run incremental update\n",
+          "# incremental_bronze_update()"
+        ],
+        "outputs": [],
+        "execution_count": null
+      },
+      {
+        "cell_type": "code",
+        "metadata": {},
+        "source": [
+          "def incremental_silver_update():\n",
+          "    \"\"\"Incrementally update Silver layer from Bronze.\"\"\"\n",
+          "    # Get latest Bronze data\n",
+          "    df_bronze_new = spark.read.format(\"delta\").load(bronze_path)\n",
+          "    \n",
+          "    # Transform to Silver schema\n",
+          "    df_silver_new = df_bronze_new.select(\n",
+          "        col(\"id\").alias(\"document_id\"),\n",
+          "        col(\"sourceFile\").alias(\"source_file\"),\n",
+          "        to_timestamp(col(\"processedAt\")).alias(\"processed_at\"),\n",
+          "        col(\"status\"),\n",
+          "        col(\"error\").alias(\"error_message\"),\n",
+          "        col(\"modelId\").alias(\"model_id\"),\n",
+          "        col(\"modelConfidence\").cast(DoubleType()).alias(\"model_confidence\"),\n",
+          "        col(\"docType\").alias(\"document_type\"),\n",
+          "        col(\"fields\").cast(\"string\").alias(\"extracted_fields_json\"),\n",
+          "        col(\"confidence\").cast(\"string\").alias(\"field_confidence_json\"),\n",
+          "        col(\"_bronze_ingested_at\"),\n",
+          "        col(\"_bronze_source\")\n",
+          "    ).withColumn(\"_silver_transformed_at\", current_timestamp()) \\\n",
+          "     .withColumn(\"_is_valid\", when(col(\"status\") == \"completed\", True).otherwise(False))\n",
+          "    \n",
+          "    # Merge into Silver table\n",
+          "    delta_silver = DeltaTable.forPath(spark, silver_path)\n",
+          "    \n",
+          "    delta_silver.alias(\"target\").merge(\n",
+          "        df_silver_new.alias(\"source\"),\n",
+          "        \"target.document_id = source.document_id AND target.source_file = source.source_file\"\n",
+          "    ).whenMatchedUpdateAll() \\\n",
+          "     .whenNotMatchedInsertAll() \\\n",
+          "     .execute()\n",
+          "    \n",
+          "    print(\"Silver layer incrementally updated\")\n",
+          "\n",
+          "# Uncomment to run incremental update\n",
+          "# incremental_silver_update()"
+        ],
+        "outputs": [],
+        "execution_count": null
+      },
+      {
+        "cell_type": "markdown",
+        "metadata": {},
+        "source": [
+          "## Delta Lake Maintenance"
+        ]
+      },
+      {
+        "cell_type": "code",
+        "metadata": {},
+        "source": [
+          "# Optimize Delta tables for query performance\n",
+          "spark.sql(\"OPTIMIZE bronze_extracted_documents\")\n",
+          "spark.sql(\"OPTIMIZE silver_documents\")\n",
+          "\n",
+          "# Vacuum old files (default 7 days retention)\n",
+          "spark.sql(\"VACUUM bronze_extracted_documents\")\n",
+          "spark.sql(\"VACUUM silver_documents\")\n",
+          "\n",
+          "print(\"Delta Lake maintenance completed\")"
+        ],
+        "outputs": [],
+        "execution_count": null
+      },
+      {
+        "cell_type": "code",
+        "metadata": {},
+        "source": [
+          "# View table history\n",
+          "spark.sql(\"DESCRIBE HISTORY silver_documents\").show(truncate=False)"
+        ],
+        "outputs": [],
+        "execution_count": null
+      }
+    ],
+    "folder": {
+      "name": "DocumentProcessing/DeltaLake"
+    }
+  }
+}

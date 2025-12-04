@@ -1,0 +1,19 @@
+{
+  "name": "LS_AzureBlobStorage",
+  "type": "Microsoft.Synapse/workspaces/linkedservices",
+  "properties": {
+    "description": "Azure Blob Storage linked service for PDF document storage",
+    "annotations": [
+      "document-processing"
+    ],
+    "type": "AzureBlobStorage",
+    "typeProperties": {
+      "serviceEndpoint": "<REPLACE_WITH_STORAGE_BLOB_ENDPOINT>",
+      "accountKind": "StorageV2"
+    },
+    "connectVia": {
+      "referenceName": "AutoResolveIntegrationRuntime",
+      "type": "IntegrationRuntimeReference"
+    }
+  }
+}

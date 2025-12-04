@@ -1,0 +1,258 @@
+{
+  "name": "Query_CosmosDB_SynapseLink",
+  "properties": {
+    "description": "Query Cosmos DB data using Azure Synapse Link analytical store. This notebook demonstrates how to read operational data in near real-time without impacting transactional workloads.",
+    "nbformat": 4,
+    "nbformat_minor": 2,
+    "bigDataPool": {
+      "referenceName": "sparkpool",
+      "type": "BigDataPoolReference"
+    },
+    "sessionProperties": {
+      "driverMemory": "28g",
+      "driverCores": 4,
+      "executorMemory": "28g",
+      "executorCores": 4,
+      "numExecutors": 2,
+      "conf": {
+        "spark.dynamicAllocation.enabled": "false",
+        "spark.dynamicAllocation.minExecutors": "2",
+        "spark.dynamicAllocation.maxExecutors": "2"
+      }
+    },
+    "metadata": {
+      "saveOutput": true,
+      "enableDebugMode": false,
+      "kernelspec": {
+        "name": "synapse_pyspark",
+        "display_name": "Synapse PySpark"
+      },
+      "language_info": {
+        "name": "python"
+      }
+    },
+    "cells": [
+      {
+        "cell_type": "markdown",
+        "metadata": {},
+        "source": [
+          "# Query Cosmos DB with Azure Synapse Link\n",
+          "\n",
+          "This notebook demonstrates how to query the Cosmos DB analytical store using Synapse Link.\n",
+          "\n",
+          "## Prerequisites\n",
+          "1. Cosmos DB account with Synapse Link enabled\n",
+          "2. Container with analytical store TTL configured\n",
+          "3. Linked service `LS_CosmosDB_Analytical` configured in Synapse\n",
+          "\n",
+          "## Benefits of Synapse Link\n",
+          "- No impact on transactional workloads\n",
+          "- Near real-time data (typically 2-5 minutes latency)\n",
+          "- No ETL pipelines needed\n",
+          "- Cost-effective analytics"
+        ]
+      },
+      {
+        "cell_type": "markdown",
+        "metadata": {},
+        "source": [
+          "## Configuration\n",
+          "Update these values to match your environment:"
+        ]
+      },
+      {
+        "cell_type": "code",
+        "metadata": {},
+        "source": [
+          "# Configuration - Update these values\n",
+          "cosmos_endpoint = \"<REPLACE_WITH_COSMOS_ENDPOINT>\"\n",
+          "cosmos_database = \"DocumentsDB\"\n",
+          "cosmos_container = \"ExtractedDocuments\"\n",
+          "\n",
+          "# For authentication, use the linked service or provide the key\n",
+          "# Option 1: Use linked service (recommended)\n",
+          "use_linked_service = True\n",
+          "linked_service_name = \"LS_CosmosDB\"\n",
+          "\n",
+          "# Option 2: Direct key (for testing only - store in Key Vault for production)\n",
+          "# cosmos_key = \"<REPLACE_WITH_COSMOS_KEY>\""
+        ],
+        "outputs": [],
+        "execution_count": null
+      },
+      {
+        "cell_type": "markdown",
+        "metadata": {},
+        "source": [
+          "## Read from Cosmos DB Analytical Store"
+        ]
+      },
+      {
+        "cell_type": "code",
+        "metadata": {},
+        "source": [
+          "# Read data from Cosmos DB analytical store using Synapse Link\n",
+          "from pyspark.sql import SparkSession\n",
+          "\n",
+          "# Configure Spark to use Cosmos DB analytical store\n",
+          "spark.conf.set(\"spark.synapse.linkedService.LS_CosmosDB.connectionMode\", \"Gateway\")\n",
+          "\n",
+          "# Read from analytical store\n",
+          "df_documents = spark.read \\\n",
+          "    .format(\"cosmos.olap\") \\\n",
+          "    .option(\"spark.synapse.linkedService\", linked_service_name) \\\n",
+          "    .option(\"spark.cosmos.container\", cosmos_container) \\\n",
+          "    .load()\n",
+          "\n",
+          "print(f\"Total documents: {df_documents.count()}\")\n",
+          "df_documents.printSchema()"
+        ],
+        "outputs": [],
+        "execution_count": null
+      },
+      {
+        "cell_type": "markdown",
+        "metadata": {},
+        "source": [
+          "## Explore Document Schema"
+        ]
+      },
+      {
+        "cell_type": "code",
+        "metadata": {},
+        "source": [
+          "# Display sample documents\n",
+          "display(df_documents.limit(10))"
+        ],
+        "outputs": [],
+        "execution_count": null
+      },
+      {
+        "cell_type": "markdown",
+        "metadata": {},
+        "source": [
+          "## Analytics Queries"
+        ]
+      },
+      {
+        "cell_type": "code",
+        "metadata": {},
+        "source": [
+          "# Create a temporary view for SQL queries\n",
+          "df_documents.createOrReplaceTempView(\"extracted_documents\")"
+        ],
+        "outputs": [],
+        "execution_count": null
+      },
+      {
+        "cell_type": "code",
+        "metadata": {},
+        "source": [
+          "%%sql\n",
+          "-- Count documents by status\n",
+          "SELECT \n",
+          "    status,\n",
+          "    COUNT(*) as document_count\n",
+          "FROM extracted_documents\n",
+          "GROUP BY status\n",
+          "ORDER BY document_count DESC"
+        ],
+        "outputs": [],
+        "execution_count": null
+      },
+      {
+        "cell_type": "code",
+        "metadata": {},
+        "source": [
+          "%%sql\n",
+          "-- Documents processed per day\n",
+          "SELECT \n",
+          "    DATE(processedAt) as processed_date,\n",
+          "    COUNT(*) as documents_processed,\n",
+          "    AVG(modelConfidence) as avg_confidence\n",
+          "FROM extracted_documents\n",
+          "WHERE processedAt IS NOT NULL\n",
+          "GROUP BY DATE(processedAt)\n",
+          "ORDER BY processed_date DESC\n",
+          "LIMIT 30"
+        ],
+        "outputs": [],
+        "execution_count": null
+      },
+      {
+        "cell_type": "code",
+        "metadata": {},
+        "source": [
+          "%%sql\n",
+          "-- Documents by model and document type\n",
+          "SELECT \n",
+          "    modelId,\n",
+          "    docType,\n",
+          "    COUNT(*) as count,\n",
+          "    AVG(modelConfidence) as avg_confidence,\n",
+          "    MIN(modelConfidence) as min_confidence,\n",
+          "    MAX(modelConfidence) as max_confidence\n",
+          "FROM extracted_documents\n",
+          "GROUP BY modelId, docType\n",
+          "ORDER BY count DESC"
+        ],
+        "outputs": [],
+        "execution_count": null
+      },
+      {
+        "cell_type": "code",
+        "metadata": {},
+        "source": [
+          "%%sql\n",
+          "-- Find low confidence documents that may need review\n",
+          "SELECT \n",
+          "    id,\n",
+          "    sourceFile,\n",
+          "    modelId,\n",
+          "    modelConfidence,\n",
+          "    status,\n",
+          "    processedAt\n",
+          "FROM extracted_documents\n",
+          "WHERE modelConfidence < 0.8\n",
+          "ORDER BY modelConfidence ASC\n",
+          "LIMIT 20"
+        ],
+        "outputs": [],
+        "execution_count": null
+      },
+      {
+        "cell_type": "markdown",
+        "metadata": {},
+        "source": [
+          "## Export Results"
+        ]
+      },
+      {
+        "cell_type": "code",
+        "metadata": {},
+        "source": [
+          "# Export aggregated results to a DataFrame for further analysis\n",
+          "df_summary = spark.sql(\"\"\"\n",
+          "    SELECT \n",
+          "        DATE(processedAt) as processed_date,\n",
+          "        modelId,\n",
+          "        docType,\n",
+          "        status,\n",
+          "        COUNT(*) as document_count,\n",
+          "        AVG(modelConfidence) as avg_confidence\n",
+          "    FROM extracted_documents\n",
+          "    WHERE processedAt IS NOT NULL\n",
+          "    GROUP BY DATE(processedAt), modelId, docType, status\n",
+          "\"\"\")\n",
+          "\n",
+          "display(df_summary)"
+        ],
+        "outputs": [],
+        "execution_count": null
+      }
+    ],
+    "folder": {
+      "name": "DocumentProcessing/Analytics"
+    }
+  }
+}
