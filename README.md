@@ -1,22 +1,80 @@
-# Azure Document Intelligence PDF Processing Pipeline
+# 🤖 Azure Document Intelligence PDF Processing Pipeline
 
-Automated document processing pipeline that extracts structured data from PDF documents using Azure Document Intelligence custom models, orchestrated via Azure Synapse Analytics, and persists extracted data to Azure Cosmos DB.
+> **Automated document processing pipeline with PDF splitting, parallel extraction, and intelligent form processing**
 
-## Features
+---
 
-- **PDF Processing**: Extract structured data from PDFs using Azure Document Intelligence
-- **Custom Models**: Support for custom-trained models via Azure Document Intelligence Studio
-- **Batch Orchestration**: Process documents at scale with Azure Synapse pipelines
-- **Async Processing**: High-performance async implementation with rate limiting
-- **Infrastructure as Code**: Complete Bicep templates for new or existing resource deployments
-- **Flexible Deployment**: Deploy fresh or connect to existing Azure resources
-- **Centralized Logging**: Diagnostic settings with Log Analytics workspace integration
-- **Comprehensive Testing**: Unit and integration test coverage
-- **Real-Time Analytics**: Azure Synapse Link for Cosmos DB enables HTAP analytics without ETL
-- **Delta Lake Integration**: Medallion architecture (Bronze/Silver layers) for data lakehouse analytics
-- **Interactive Notebooks**: Polyglot notebooks for guided deployment, testing, and troubleshooting
+## 📑 Table of Contents
 
-## Interactive Notebooks
+- [Overview](#-overview)
+- [Features](#-features)
+- [Architecture](#-architecture)
+- [Quick Start](#-quick-start)
+- [Documentation](#-documentation)
+- [Interactive Notebooks](#-interactive-notebooks)
+- [Getting Started](#-getting-started)
+- [Deployment Options](#-deployment-options)
+- [Local Development](#-local-development)
+- [Testing](#-testing)
+- [API Reference](#-api-reference)
+- [Synapse Pipeline](#-synapse-pipeline)
+- [Cosmos DB Schema](#-cosmos-db-schema)
+- [Analytics](#-analytics-with-synapse-link-and-delta-lake)
+- [Monitoring](#-logging-and-monitoring)
+- [Configuration](#-configuration-reference)
+- [Troubleshooting](#-troubleshooting)
+- [Contributing](#-contributing)
+
+---
+
+## 🎯 Overview
+
+This pipeline automates document processing by:
+
+1. **📄 Splitting multi-page PDFs** into 2-page form chunks automatically
+2. **🤖 Extracting data** from PDFs using **Azure Document Intelligence** custom models
+3. **⚡ Processing forms in parallel** with rate-limit aware concurrency (3 concurrent calls)
+4. **🔄 Orchestrating processing** via **Azure Synapse Analytics**
+5. **🗄️ Persisting extracted data** to **Azure Cosmos DB** with PDF source links
+6. **📦 Archiving split PDFs** in `_splits/` folder for review
+7. **🚀 Deploying infrastructure** via **Bicep** (subscription-level)
+
+---
+
+## ✨ Features
+
+| Feature | Description | Status |
+|---------|-------------|--------|
+| 🔄 **Auto PDF Splitting** | Splits multi-page PDFs into 2-page form chunks | ✅ |
+| ⚡ **Parallel Processing** | 3 concurrent Document Intelligence calls with semaphore | ✅ |
+| 📎 **PDF Archive** | Split PDFs stored in `_splits/` folder for user review | ✅ |
+| 🔗 **Source Linking** | Each Cosmos DB record links to its processed PDF | ✅ |
+| 🤖 **Custom Models** | Support for custom-trained Document Intelligence models | ✅ |
+| 🔄 **Batch Orchestration** | Process documents at scale with Synapse pipelines | ✅ |
+| 📊 **Real-Time Analytics** | Synapse Link for HTAP analytics without ETL | ✅ |
+| 🏗️ **Infrastructure as Code** | Complete Bicep templates (new or existing resources) | ✅ |
+| 📈 **Centralized Logging** | Diagnostic settings with Log Analytics integration | ✅ |
+| 🔐 **Managed Identity** | Secure authentication without keys where possible | ✅ |
+| 📓 **Interactive Notebooks** | Polyglot notebooks for guided workflows | ✅ |
+
+---
+
+## 📚 Documentation
+
+Comprehensive documentation is available in the [`docs/`](./docs/) folder:
+
+| Document | Description |
+|----------|-------------|
+| [📋 Documentation Index](./docs/README.md) | Full documentation navigation |
+| [🔷 Azure Services Guide](./docs/azure-services/README.md) | All Azure services used in this pipeline |
+| [🤖 Custom Models Guide](./docs/guides/document-intelligence-custom-models.md) | Building and training custom extraction models |
+| [🖥️ Studio Walkthrough](./docs/guides/document-intelligence-studio-walkthrough.md) | Step-by-step Document Intelligence Studio guide |
+| [📝 Documentation Standards](./docs/DOCUMENTATION-STANDARDS.md) | Visual and writing guidelines |
+| [🏗️ Architecture Diagram](./docs/diagrams/architecture.excalidraw) | System architecture (Excalidraw) |
+
+---
+
+## 📓 Interactive Notebooks
 
 This project includes **Polyglot Notebooks** (`.ipynb`) for step-by-step guidance through all deployment and operational tasks. Find them in the [`notebooks/`](./notebooks/) folder.
 
@@ -35,34 +93,77 @@ This project includes **Polyglot Notebooks** (`.ipynb`) for step-by-step guidanc
 
 ---
 
-## Architecture
+## 🏗️ Architecture
 
 ```
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│  Blob Storage   │───>│  Azure Synapse  │───>│ Azure Function  │
-│  (PDF Files)    │    │   (Pipeline)    │    │  (HTTP Trigger) │
-└─────────────────┘    └─────────────────┘    └────────┬────────┘
-         │                     │                       │
-         │                     │       ┌───────────────┼───────────────────────────────┐
-         │                     │       │               │                               │
-         │                     │       v               v                               v
-         │                     │  ┌─────────────┐ ┌─────────────┐            ┌─────────────────┐
-         │                     │  │  Document   │ │  Cosmos DB  │            │    Key Vault    │
-         │                     │  │ Intelligence│ │  (Results)  │            │   (Secrets)     │
-         │                     │  └─────────────┘ └─────────────┘            └─────────────────┘
-         │                     │        │               │                           │
-         └─────────────────────┴────────┴───────────────┴───────────────────────────┘
-                                                   │
-                                                   v
-                                        ┌─────────────────────┐
-                                        │   Log Analytics     │
-                                        │    (Monitoring)     │
-                                        └─────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                         PDF Processing Pipeline                                  │
+├─────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                  │
+│   📦 Blob Storage            🔄 Synapse Pipeline           ⚡ Azure Function    │
+│   (incoming/ PDFs)     →     (orchestration)          →    (HTTP Trigger)       │
+│                                                                  │              │
+│                                                                  ▼              │
+│                                                        ┌─────────────────┐      │
+│                                                        │  PDF Splitting  │      │
+│                                                        │  (2-page forms) │      │
+│                                                        └────────┬────────┘      │
+│                                                                  │              │
+│                               ┌──────────────────────────────────┼──────────┐   │
+│                               │                                  │          │   │
+│                               ▼                                  ▼          ▼   │
+│   📦 Blob Storage       🤖 Document Intelligence          🗄️ Cosmos DB        │
+│   (_splits/ PDFs)   ←   (parallel extraction)        →    (results + links)    │
+│                               │                                                  │
+│                               └──────────────────────────────────────────────┐  │
+│                                                                              │  │
+│   🔐 Key Vault              📊 Log Analytics              📈 App Insights   │  │
+│   (secrets)            ←    (centralized logs)       ←    (APM)        ←────┘  │
+│                                                                                  │
+└─────────────────────────────────────────────────────────────────────────────────┘
+```
+
+### 📊 Data Flow
+
+1. **📤 PDF Upload** → Blob Storage `incoming/` folder
+2. **🔄 Pipeline Trigger** → Synapse discovers new PDFs (batch of 3)
+3. **⚡ Function Processing** → Downloads PDF, splits into 2-page chunks
+4. **📦 PDF Archive** → Split PDFs uploaded to `_splits/` folder
+5. **🤖 Parallel Extraction** → Document Intelligence extracts fields (3 concurrent)
+6. **🗄️ Data Storage** → Results saved to Cosmos DB with PDF source links
+7. **📊 Monitoring** → Logs sent to Log Analytics and App Insights
+
+---
+
+## 🚀 Quick Start
+
+```bash
+# 1. Deploy infrastructure (creates RG automatically)
+az deployment sub create \
+  --location eastus \
+  --template-file infra/main.bicep \
+  --parameters infra/parameters/dev.bicepparam \
+  --parameters sqlAdministratorPassword='YourSecurePassword123!'
+
+# 2. Deploy function code
+cd src/functions && func azure functionapp publish <function-app-name> --python
+
+# 3. Upload a test PDF
+az storage blob upload \
+  --account-name <storage-account> \
+  --container-name pdfs \
+  --name incoming/test.pdf \
+  --file ./test.pdf
+
+# 4. Trigger pipeline
+az synapse pipeline create-run \
+  --workspace-name <synapse-workspace> \
+  --name ProcessPDFsWithDocIntelligence
 ```
 
 ---
 
-## Getting Started
+## 📦 Getting Started
 
 ### Prerequisites
 
