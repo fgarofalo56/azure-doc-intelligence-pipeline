@@ -4,40 +4,7 @@
 
 <div align="center">
 
-```mermaid
-flowchart LR
-    subgraph Input["📦 Input"]
-        Blob["Azure Blob<br/>(PDFs)"]
-    end
-
-    subgraph Orchestration["🔄 Synapse"]
-        Pipeline["Pipeline"]
-    end
-
-    subgraph Processing["⚡ Function"]
-        Split["PDF Split"]
-    end
-
-    subgraph AI["🤖 Doc Intel"]
-        Extract["Extract"]
-    end
-
-    subgraph Output["📦 Output"]
-        Cosmos["🗄️ Cosmos DB"]
-        Splits["📄 Split PDFs"]
-    end
-
-    Blob --> Pipeline --> Split --> Extract
-    Extract --> Cosmos
-    Extract --> Splits
-
-    style Blob fill:#deebff,stroke:#0078D4
-    style Pipeline fill:#ede9fe,stroke:#7C3AED
-    style Split fill:#fef3c7,stroke:#F59E0B
-    style Extract fill:#fee2e2,stroke:#DC2626
-    style Cosmos fill:#d1fae5,stroke:#059669
-    style Splits fill:#deebff,stroke:#0078D4
-```
+![Architecture Diagram](docs/diagrams/FormExtraction_docs_diagrams_architecture.svg)
 
 </div>
 

@@ -711,13 +711,33 @@ async def delete_document(req: func.HttpRequest) -> func.HttpResponse:
 async def health_check(req: func.HttpRequest) -> func.HttpResponse:
     """Health check endpoint with service status."""
     services: dict[str, str] = {}
+    blob_trigger_status: dict[str, Any] = {}
 
     # Check blob service
     try:
         blob_service = get_blob_service()
         services["storage"] = "healthy" if blob_service else "not_configured"
+
+        # Check blob trigger health - verify storage connectivity
+        if blob_service:
+            try:
+                # Try to list blobs in incoming folder to verify trigger path
+                container_name = "pdfs"
+                blobs = list(blob_service.list_blobs(container_name, prefix="incoming/"))
+                blob_trigger_status = {
+                    "status": "healthy",
+                    "container": container_name,
+                    "path": "incoming/",
+                    "pendingFiles": len(blobs),
+                }
+            except Exception as e:
+                blob_trigger_status = {
+                    "status": "unhealthy",
+                    "error": str(e),
+                }
     except Exception:
         services["storage"] = "unhealthy"
+        blob_trigger_status = {"status": "unknown", "error": "Storage not accessible"}
 
     # Check config
     try:
@@ -737,7 +757,376 @@ async def health_check(req: func.HttpRequest) -> func.HttpResponse:
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "version": "2.0.0",
         "services": services,
+        "blobTrigger": blob_trigger_status,
     })
+
+
+@app.function_name(name="EstimateCost")
+@app.route(route="estimate-cost", methods=["POST"])
+async def estimate_cost(req: func.HttpRequest) -> func.HttpResponse:
+    """Estimate Document Intelligence processing costs.
+
+    Request body:
+        {
+            "blobUrl": "https://...",  // Optional: URL to PDF for page count
+            "pageCount": 10,           // Optional: Manual page count
+            "modelId": "custom-model"  // Optional: Model ID for pricing tier
+        }
+
+    Returns cost estimate based on Azure Document Intelligence pricing.
+    """
+    logger.info("EstimateCost HTTP trigger invoked")
+
+    try:
+        req_body = req.get_json()
+    except ValueError:
+        return create_error_response("Invalid JSON in request body", status_code=400)
+
+    blob_url = req_body.get("blobUrl")
+    page_count = req_body.get("pageCount")
+    model_id = req_body.get("modelId", "prebuilt-layout")
+
+    if not blob_url and not page_count:
+        return create_error_response(
+            "Either blobUrl or pageCount is required",
+            status_code=400,
+        )
+
+    try:
+        # Get page count from PDF if URL provided
+        if blob_url and not page_count:
+            blob_service = get_blob_service()
+            if blob_service:
+                pdf_content = blob_service.download_blob(blob_url)
+                pdf_service = get_pdf_service()
+                page_count = pdf_service.get_page_count(pdf_content)
+            else:
+                return create_error_response(
+                    "Storage not configured, provide pageCount instead",
+                    status_code=400,
+                )
+
+        # Determine model type for pricing
+        if model_id.startswith("prebuilt-"):
+            model_type = "prebuilt"
+            price_per_page = 0.001  # $1.00 per 1000 pages for prebuilt
+        else:
+            model_type = "custom"
+            price_per_page = 0.01  # $10.00 per 1000 pages for custom
+
+        # Calculate forms count (assuming 2 pages per form)
+        forms_count = (page_count + 1) // 2
+
+        # Calculate costs
+        read_cost = page_count * 0.001  # Read model for splitting
+        analysis_cost = page_count * price_per_page
+        total_cost = read_cost + analysis_cost
+
+        notes = [
+            f"Pricing based on Azure Document Intelligence standard tier",
+            f"Prebuilt models: $1.00/1000 pages, Custom models: $10.00/1000 pages",
+            f"Page splitting uses Read model ($1.00/1000 pages)",
+        ]
+
+        if page_count > 50:
+            notes.append("Consider batch processing for volumes over 50 pages")
+
+        return create_response({
+            "pageCount": page_count,
+            "formsCount": forms_count,
+            "modelType": model_type,
+            "pricing": {
+                "readCostPerPage": 0.001,
+                "analysisCostPerPage": price_per_page,
+                "currency": "USD",
+            },
+            "estimatedCostUsd": round(total_cost, 4),
+            "notes": notes,
+        })
+
+    except Exception as e:
+        logger.exception(f"Cost estimation error: {e}")
+        return create_error_response(f"Cost estimation failed: {e}", status_code=500)
+
+
+@app.function_name(name="BatchProcess")
+@app.route(route="batch", methods=["POST"])
+async def batch_process(req: func.HttpRequest) -> func.HttpResponse:
+    """Process multiple PDFs in a single request.
+
+    Request body:
+        {
+            "blobs": [
+                {"blobUrl": "https://...", "blobName": "doc1.pdf"},
+                {"blobUrl": "https://...", "blobName": "doc2.pdf"}
+            ],
+            "modelId": "custom-model-v1",
+            "webhookUrl": "https://...",
+            "parallel": true
+        }
+    """
+    logger.info("BatchProcess HTTP trigger invoked")
+
+    try:
+        req_body = req.get_json()
+    except ValueError:
+        return create_error_response("Invalid JSON in request body", status_code=400)
+
+    blobs = req_body.get("blobs", [])
+    if not blobs:
+        return create_error_response("No blobs provided", status_code=400)
+
+    if len(blobs) > 50:
+        return create_error_response(
+            "Maximum 50 blobs per batch request",
+            status_code=400,
+        )
+
+    try:
+        config = get_config()
+        model_id = req_body.get("modelId", config.default_model_id)
+        webhook_url = req_body.get("webhookUrl")
+        parallel = req_body.get("parallel", True)
+
+        # Generate batch ID
+        batch_id = f"batch_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}"
+
+        results: list[dict[str, Any]] = []
+
+        async def process_single(blob_info: dict[str, str]) -> dict[str, Any]:
+            """Process a single blob from the batch."""
+            blob_url = blob_info.get("blobUrl", "")
+            blob_name = blob_info.get("blobName", "")
+
+            if not blob_url or not blob_name:
+                return {
+                    "blobName": blob_name or "unknown",
+                    "status": "failed",
+                    "error": "Missing blobUrl or blobName",
+                }
+
+            try:
+                result = await process_pdf_internal(
+                    blob_url=blob_url,
+                    blob_name=blob_name,
+                    model_id=model_id,
+                    webhook_url=None,  # Webhook at batch level only
+                )
+                return {
+                    "blobName": blob_name,
+                    "status": result.get("status", "unknown"),
+                    "formsProcessed": result.get("formsProcessed", 0),
+                    "documentId": result.get("documentId"),
+                }
+            except Exception as e:
+                logger.error(f"Batch item failed: {blob_name}: {e}")
+                return {
+                    "blobName": blob_name,
+                    "status": "failed",
+                    "error": str(e),
+                }
+
+        if parallel:
+            # Process all blobs in parallel
+            tasks = [process_single(blob) for blob in blobs]
+            results = await asyncio.gather(*tasks)
+        else:
+            # Process sequentially
+            for blob in blobs:
+                result = await process_single(blob)
+                results.append(result)
+
+        # Count results
+        processed = sum(1 for r in results if r.get("status") in ("success", "partial"))
+        failed = sum(1 for r in results if r.get("status") == "failed")
+
+        overall_status = "success" if failed == 0 else ("partial" if processed > 0 else "failed")
+
+        # Send webhook notification for batch completion
+        if webhook_url:
+            webhook_service = get_webhook_service()
+            await webhook_service.notify_processing_complete(
+                source_file=batch_id,
+                status=overall_status,
+                forms_processed=processed,
+                total_forms=len(blobs),
+                document_ids=[r.get("documentId") for r in results if r.get("documentId")],
+                webhook_url=webhook_url,
+            )
+
+        return create_response({
+            "status": overall_status,
+            "batchId": batch_id,
+            "totalBlobs": len(blobs),
+            "processed": processed,
+            "failed": failed,
+            "results": results,
+        })
+
+    except Exception as e:
+        logger.exception(f"Batch processing error: {e}")
+        return create_error_response(f"Batch processing failed: {e}", status_code=500)
+
+
+@app.function_name(name="ProcessMultiModel")
+@app.route(route="process-multi", methods=["POST"])
+async def process_multi_model(req: func.HttpRequest) -> func.HttpResponse:
+    """Process a PDF using different models for different page ranges.
+
+    Request body:
+        {
+            "blobUrl": "https://...",
+            "blobName": "document.pdf",
+            "modelMapping": {
+                "1-2": "form-type-a-model",
+                "3-4": "form-type-b-model",
+                "5-6": "form-type-c-model"
+            },
+            "webhookUrl": "https://..."
+        }
+    """
+    logger.info("ProcessMultiModel HTTP trigger invoked")
+
+    try:
+        req_body = req.get_json()
+    except ValueError:
+        return create_error_response("Invalid JSON in request body", status_code=400)
+
+    blob_url = req_body.get("blobUrl")
+    blob_name = req_body.get("blobName")
+    model_mapping = req_body.get("modelMapping", {})
+    webhook_url = req_body.get("webhookUrl")
+
+    if not blob_url or not blob_name:
+        return create_error_response(
+            "Missing required fields: blobUrl and blobName",
+            status_code=400,
+        )
+
+    if not model_mapping:
+        return create_error_response(
+            "modelMapping is required for multi-model processing",
+            status_code=400,
+        )
+
+    try:
+        blob_service = get_blob_service()
+        if not blob_service:
+            return create_error_response("Storage not configured", status_code=500)
+
+        # Download and split PDF
+        pdf_content = blob_service.download_blob(blob_url)
+        pdf_service = get_pdf_service()
+        page_count = pdf_service.get_page_count(pdf_content)
+
+        doc_service = get_document_service()
+        cosmos_service = get_cosmos_service()
+        webhook_service = get_webhook_service()
+
+        container_name, original_blob_path = blob_service.parse_blob_url(blob_url)
+        base_name = original_blob_path.rsplit(".", 1)[0]
+        processed_at = datetime.now(timezone.utc).isoformat()
+
+        results: list[dict[str, Any]] = []
+        document_ids: list[str] = []
+
+        # Parse and process each page range
+        for page_range, model_id in model_mapping.items():
+            try:
+                # Parse page range (e.g., "1-2" -> start=1, end=2)
+                parts = page_range.split("-")
+                start_page = int(parts[0])
+                end_page = int(parts[1]) if len(parts) > 1 else start_page
+
+                if start_page < 1 or end_page > page_count:
+                    results.append({
+                        "pageRange": page_range,
+                        "modelId": model_id,
+                        "status": "failed",
+                        "error": f"Page range {page_range} out of bounds (document has {page_count} pages)",
+                    })
+                    continue
+
+                # Extract pages for this range
+                chunk_bytes = pdf_service.extract_pages(pdf_content, start_page, end_page)
+
+                # Upload chunk
+                chunk_blob_name = f"{base_name}_pages{start_page}-{end_page}.pdf"
+                split_blob_path = f"_splits/{chunk_blob_name}"
+                chunk_url = blob_service.upload_blob(
+                    container_name=container_name,
+                    blob_name=split_blob_path,
+                    content=chunk_bytes,
+                )
+
+                # Process with specified model
+                chunk_sas_url = blob_service.generate_sas_url(chunk_url)
+                analysis_result = await doc_service.analyze_document(
+                    blob_url=chunk_sas_url,
+                    model_id=model_id,
+                    blob_name=f"{blob_name} (pages {start_page}-{end_page})",
+                )
+
+                # Save to Cosmos DB
+                doc_id = f"{blob_name.replace('/', '_').replace('.', '_')}_pages{start_page}-{end_page}"
+                document = {
+                    "id": doc_id,
+                    "sourceFile": blob_name,
+                    "processedPdfUrl": chunk_url,
+                    "processedAt": processed_at,
+                    "pageRange": page_range,
+                    "originalPageCount": page_count,
+                    **analysis_result,
+                }
+
+                await cosmos_service.save_document_result(document)
+                document_ids.append(doc_id)
+
+                results.append({
+                    "pageRange": page_range,
+                    "modelId": model_id,
+                    "documentId": doc_id,
+                    "status": "success",
+                })
+
+            except Exception as e:
+                logger.error(f"Failed to process pages {page_range}: {e}")
+                results.append({
+                    "pageRange": page_range,
+                    "modelId": model_id,
+                    "status": "failed",
+                    "error": str(e),
+                })
+
+        # Calculate status
+        successful = sum(1 for r in results if r.get("status") == "success")
+        status = "success" if successful == len(results) else (
+            "partial" if successful > 0 else "failed"
+        )
+
+        # Send webhook notification
+        if webhook_url:
+            await webhook_service.notify_processing_complete(
+                source_file=blob_name,
+                status=status,
+                forms_processed=successful,
+                total_forms=len(results),
+                document_ids=document_ids,
+                webhook_url=webhook_url,
+            )
+
+        return create_response({
+            "status": status,
+            "processedAt": processed_at,
+            "pageCount": page_count,
+            "rangesProcessed": successful,
+            "totalRanges": len(results),
+            "results": results,
+        })
+
+    except Exception as e:
+        logger.exception(f"Multi-model processing error: {e}")
+        return create_error_response(f"Multi-model processing failed: {e}", status_code=500)
 
 
 # ============================================================================

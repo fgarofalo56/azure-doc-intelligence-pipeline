@@ -59,40 +59,7 @@
 
 ## 🏗️ Architecture Overview
 
-```mermaid
-flowchart LR
-    subgraph Input["📦 Input"]
-        Blob["Blob Storage<br/>(incoming PDFs)"]
-    end
-
-    subgraph Orchestration["🔄 Orchestration"]
-        Synapse["Synapse Pipeline"]
-    end
-
-    subgraph Processing["⚡ Processing"]
-        Function["Azure Function"]
-        DocIntel["🤖 Document Intelligence"]
-        Function --> DocIntel
-    end
-
-    subgraph Output["📦 Output"]
-        Splits["Blob Storage<br/>(_splits/ PDFs)"]
-        Cosmos["🗄️ Cosmos DB<br/>(results)"]
-    end
-
-    subgraph Monitoring["📊 Monitoring"]
-        KeyVault["🔐 Key Vault"]
-        LogAnalytics["📊 Log Analytics"]
-        AppInsights["📈 App Insights"]
-    end
-
-    Blob --> Synapse --> Function
-    DocIntel --> Splits
-    DocIntel --> Cosmos
-    DocIntel --> AppInsights
-    AppInsights --> LogAnalytics
-    Function -.-> KeyVault
-```
+![Architecture Diagram](./diagrams/FormExtraction_docs_diagrams_architecture.svg)
 
 ### Data Flow
 
@@ -178,16 +145,16 @@ docs/
 ├── guides/
 │   ├── document-intelligence-custom-models.md
 │   ├── document-intelligence-studio-walkthrough.md
-│   ├── getting-started.md                 # TODO
-│   ├── deployment.md                      # TODO
-│   ├── configuration.md                   # TODO
-│   └── troubleshooting.md                 # TODO
+│   ├── getting-started.md                 # Quick start guide
+│   ├── deployment.md                      # Deployment instructions
+│   ├── configuration.md                   # Environment variables
+│   └── troubleshooting.md                 # Common issues & solutions
 ├── azure-services/
 │   └── README.md                          # Services overview
 ├── diagrams/
 │   └── architecture.excalidraw            # Architecture diagram
 └── api/
-    └── function-api.md                    # TODO
+    └── function-api.md                    # API reference
 ```
 
 ---

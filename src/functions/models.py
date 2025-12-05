@@ -99,6 +99,92 @@ class DeleteDocumentRequest(BaseModel):
     model_config = {"populate_by_name": True}
 
 
+class BatchProcessRequest(BaseModel):
+    """Request body for POST /api/batch endpoint."""
+
+    blobs: list[dict[str, str]] = Field(
+        ...,
+        min_length=1,
+        max_length=50,
+        description="List of blobs to process (each with blobUrl and blobName)",
+    )
+    model_id: str | None = Field(
+        default=None,
+        alias="modelId",
+        description="Document Intelligence model ID (applies to all blobs)",
+    )
+    webhook_url: HttpUrl | None = Field(
+        default=None,
+        alias="webhookUrl",
+        description="Webhook URL for batch completion notification",
+    )
+    parallel: bool = Field(
+        default=True,
+        description="Process blobs in parallel (default) or sequentially",
+    )
+
+    model_config = {"populate_by_name": True}
+
+
+class CostEstimateRequest(BaseModel):
+    """Request body for POST /api/estimate-cost endpoint."""
+
+    blob_url: HttpUrl | None = Field(
+        default=None,
+        alias="blobUrl",
+        description="URL to PDF for page count estimation",
+    )
+    page_count: int | None = Field(
+        default=None,
+        alias="pageCount",
+        ge=1,
+        le=10000,
+        description="Manual page count if blob_url not provided",
+    )
+    model_id: str | None = Field(
+        default=None,
+        alias="modelId",
+        description="Model ID to estimate pricing for",
+    )
+
+    model_config = {"populate_by_name": True}
+
+    @field_validator("page_count")
+    @classmethod
+    def validate_page_count(cls, v: int | None, info: Any) -> int | None:
+        """Ensure either blob_url or page_count is provided."""
+        # Validation happens at runtime with both values
+        return v
+
+
+class MultiModelRequest(BaseModel):
+    """Request body for POST /api/process-multi endpoint."""
+
+    blob_url: HttpUrl = Field(
+        ...,
+        alias="blobUrl",
+        description="Full URL to the PDF blob",
+    )
+    blob_name: str = Field(
+        ...,
+        alias="blobName",
+        min_length=1,
+        description="Blob path within container",
+    )
+    model_mapping: dict[str, str] = Field(
+        ...,
+        alias="modelMapping",
+        description="Mapping of page ranges to model IDs (e.g., {'1-2': 'model-a', '3-4': 'model-b'})",
+    )
+    webhook_url: HttpUrl | None = Field(
+        default=None,
+        alias="webhookUrl",
+        description="Optional webhook URL for completion notification",
+    )
+
+    model_config = {"populate_by_name": True}
+
+
 # ============================================================================
 # Response Models
 # ============================================================================
@@ -172,8 +258,41 @@ class HealthResponse(BaseModel):
 
     status: str
     timestamp: datetime
-    version: str = Field(default="1.0.0")
+    version: str = Field(default="2.0.0")
     services: dict[str, str] = Field(default_factory=dict)
+    blob_trigger: dict[str, Any] | None = Field(
+        default=None,
+        alias="blobTrigger",
+        description="Blob trigger health status",
+    )
+
+    model_config = {"populate_by_name": True}
+
+
+class CostEstimateResponse(BaseModel):
+    """Response for POST /api/estimate-cost endpoint."""
+
+    page_count: int = Field(..., alias="pageCount")
+    forms_count: int = Field(..., alias="formsCount")
+    model_type: str = Field(..., alias="modelType")
+    pricing: dict[str, Any] = Field(default_factory=dict)
+    estimated_cost_usd: float = Field(..., alias="estimatedCostUsd")
+    notes: list[str] = Field(default_factory=list)
+
+    model_config = {"populate_by_name": True}
+
+
+class BatchProcessResponse(BaseModel):
+    """Response for POST /api/batch endpoint."""
+
+    status: str
+    batch_id: str = Field(..., alias="batchId")
+    total_blobs: int = Field(..., alias="totalBlobs")
+    processed: int
+    failed: int
+    results: list[dict[str, Any]] = Field(default_factory=list)
+
+    model_config = {"populate_by_name": True}
 
 
 class ErrorResponse(BaseModel):

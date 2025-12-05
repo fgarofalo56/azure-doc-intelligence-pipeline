@@ -7,7 +7,14 @@ Services are initialized once and reused for the function lifetime.
 from .blob_service import BlobService
 from .cosmos_service import CosmosService
 from .document_service import DocumentService
+from .logging_service import (
+    JsonFormatter,
+    StructuredLogger,
+    configure_json_logging,
+    get_structured_logger,
+)
 from .pdf_service import PdfService
+from .rate_limiter import RateLimitConfig, RateLimiter, get_rate_limiter
 from .telemetry_service import TelemetryService, get_telemetry_service
 from .webhook_service import WebhookService, get_webhook_service
 
@@ -109,11 +116,18 @@ __all__ = [
     "PdfService",
     "TelemetryService",
     "WebhookService",
+    "JsonFormatter",
+    "StructuredLogger",
+    "RateLimitConfig",
+    "RateLimiter",
     "get_document_service",
     "get_cosmos_service",
     "get_blob_service",
     "get_pdf_service",
     "get_telemetry_service",
     "get_webhook_service",
+    "get_structured_logger",
+    "configure_json_logging",
+    "get_rate_limiter",
     "reset_services",
 ]

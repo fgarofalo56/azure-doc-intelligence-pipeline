@@ -112,3 +112,58 @@ class PdfService:
         except Exception as e:
             logger.error(f"Failed to split PDF: {e}")
             raise PdfSplitError(f"Failed to split PDF: {e}") from e
+
+    def extract_pages(
+        self,
+        pdf_content: bytes,
+        start_page: int,
+        end_page: int,
+    ) -> bytes:
+        """Extract a specific range of pages from a PDF.
+
+        Args:
+            pdf_content: PDF file content as bytes.
+            start_page: First page to extract (1-indexed).
+            end_page: Last page to extract (1-indexed, inclusive).
+
+        Returns:
+            bytes: PDF content containing only the specified pages.
+
+        Raises:
+            PdfSplitError: If extraction fails or page range is invalid.
+        """
+        try:
+            reader = PdfReader(io.BytesIO(pdf_content))
+            total_pages = len(reader.pages)
+
+            # Validate page range
+            if start_page < 1 or end_page > total_pages:
+                raise PdfSplitError(
+                    f"Invalid page range {start_page}-{end_page}. "
+                    f"PDF has {total_pages} pages."
+                )
+
+            if start_page > end_page:
+                raise PdfSplitError(
+                    f"Start page ({start_page}) cannot be greater than end page ({end_page})"
+                )
+
+            writer = PdfWriter()
+
+            # Pages are 0-indexed in pypdf
+            for page_idx in range(start_page - 1, end_page):
+                writer.add_page(reader.pages[page_idx])
+
+            # Write to bytes
+            output = io.BytesIO()
+            writer.write(output)
+            output.seek(0)
+
+            logger.info(f"Extracted pages {start_page}-{end_page} from {total_pages}-page PDF")
+            return output.read()
+
+        except PdfSplitError:
+            raise
+        except Exception as e:
+            logger.error(f"Failed to extract pages: {e}")
+            raise PdfSplitError(f"Failed to extract pages: {e}") from e
