@@ -23,6 +23,11 @@
 - [Monitoring](#-logging-and-monitoring)
 - [Configuration](#-configuration-reference)
 - [Troubleshooting](#-troubleshooting)
+- [CI/CD Pipeline](#-cicd-pipeline)
+- [Docker Support](#-docker-support)
+- [Webhook Notifications](#-webhook-notifications)
+- [Application Insights](#-application-insights-telemetry)
+- [Dead Letter Queue](#-dead-letter-queue)
 - [Contributing](#-contributing)
 
 ---
@@ -56,6 +61,14 @@ This pipeline automates document processing by:
 | 📈 **Centralized Logging** | Diagnostic settings with Log Analytics integration | ✅ |
 | 🔐 **Managed Identity** | Secure authentication without keys where possible | ✅ |
 | 📓 **Interactive Notebooks** | Polyglot notebooks for guided workflows | ✅ |
+| 🔁 **Auto-Processing Blob Trigger** | Automatic PDF processing on upload to `incoming/` | ✅ |
+| 🔄 **Reprocess Failed Documents** | Retry endpoint with configurable max attempts | ✅ |
+| ☠️ **Dead Letter Queue** | Failed documents moved to dead letter container | ✅ |
+| 📊 **Custom Telemetry** | Application Insights metrics for form processing | ✅ |
+| 🔔 **Webhook Notifications** | Notify external systems on processing completion | ✅ |
+| 🐳 **Docker Support** | Container-based deployment option | ✅ |
+| 🚀 **CI/CD Pipeline** | GitHub Actions for automated testing and deployment | ✅ |
+| ✅ **Pre-commit Hooks** | Automated code quality checks | ✅ |
 
 ---
 
@@ -210,7 +223,7 @@ cp deploy.config.example deploy.config
 
 ---
 
-## Deployment Options
+## 🚀 Deployment Options
 
 Choose the deployment option that best fits your scenario:
 
@@ -461,7 +474,7 @@ cd src/functions && func azure functionapp publish $FUNC_APP_NAME --python
 
 ---
 
-## Local Development
+## 💻 Local Development
 
 ### Setup Environment Variables
 
@@ -515,7 +528,7 @@ curl -X POST http://localhost:7071/api/process \
 
 ---
 
-## Testing
+## 🧪 Testing
 
 ### Run Unit Tests
 
@@ -609,17 +622,102 @@ Get processing status for a document.
 }
 ```
 
+### POST /api/reprocess/{blob_name}
+
+Reprocess a failed document. Increments retry count and moves from dead letter if applicable.
+
+**Response (200 OK):**
+```json
+{
+  "status": "success",
+  "message": "Reprocessing started for folder/file.pdf",
+  "retryCount": 2
+}
+```
+
+**Response (404 Not Found):**
+```json
+{
+  "status": "error",
+  "message": "Document folder/file.pdf not found"
+}
+```
+
+**Response (400 Bad Request):**
+```json
+{
+  "status": "error",
+  "message": "Document has exceeded max retry attempts (3)"
+}
+```
+
+### GET /api/status/batch/{blob_name}
+
+Get status for all forms extracted from a multi-page PDF.
+
+**Response (200 OK):**
+```json
+{
+  "sourceFile": "folder/document.pdf",
+  "totalForms": 3,
+  "documents": [
+    {
+      "id": "folder_document_pdf_form1",
+      "formNumber": 1,
+      "status": "completed",
+      "processedAt": "2024-01-15T10:30:00Z"
+    },
+    {
+      "id": "folder_document_pdf_form2",
+      "formNumber": 2,
+      "status": "completed",
+      "processedAt": "2024-01-15T10:30:05Z"
+    }
+  ]
+}
+```
+
+### DELETE /api/documents/{blob_name}
+
+Delete all documents and split PDFs for a source file.
+
+**Response (200 OK):**
+```json
+{
+  "status": "success",
+  "message": "Deleted 3 documents and 3 split PDFs for folder/document.pdf"
+}
+```
+
 ### GET /api/health
 
-Health check endpoint.
+Health check endpoint with service connectivity verification.
 
 **Response:**
 ```json
 {
   "status": "healthy",
-  "timestamp": "2024-01-15T10:30:00Z"
+  "timestamp": "2024-01-15T10:30:00Z",
+  "services": {
+    "documentIntelligence": "connected",
+    "cosmosDb": "connected",
+    "blobStorage": "connected"
+  }
 }
 ```
+
+### Blob Trigger (Auto-Processing)
+
+PDFs uploaded to `pdfs/incoming/{filename}` are automatically processed.
+
+**Container Path:** `pdfs/incoming/{name}`
+
+**Behavior:**
+- Triggers on new blob upload
+- Processes PDF using default model (`DEFAULT_MODEL_ID`)
+- Stores results in Cosmos DB
+- Sends webhook notification on completion (if configured)
+- Moves to dead letter container after max retries exceeded
 
 ---
 
@@ -822,15 +920,20 @@ Use this mode when your **existing Synapse workspace** is configured with GitHub
 
 ---
 
-## Cosmos DB Schema
+## 🗄️ Cosmos DB Schema
 
-Documents are stored with the following structure:
+Documents are stored with the following structure. Each extracted form from a multi-page PDF gets its own document:
 
 ```json
 {
-  "id": "folder_document_pdf",
+  "id": "folder_document_pdf_form1",
   "sourceFile": "folder/document.pdf",
+  "processedPdfUrl": "https://storage.blob.core.windows.net/pdfs/_splits/document_form1_pages1-2.pdf?sas=...",
   "processedAt": "2024-01-15T10:30:00Z",
+  "formNumber": 1,
+  "totalForms": 3,
+  "pageRange": "1-2",
+  "originalPageCount": 6,
   "modelId": "custom-model-v1",
   "modelConfidence": 0.95,
   "docType": "invoice",
@@ -848,6 +951,16 @@ Documents are stored with the following structure:
   "error": null
 }
 ```
+
+| Field | Description |
+|-------|-------------|
+| `id` | Unique document ID (includes form number for multi-form PDFs) |
+| `sourceFile` | Original PDF path (**partition key**) |
+| `processedPdfUrl` | SAS URL to the split PDF in `_splits/` folder |
+| `formNumber` | Which form in the PDF (1-indexed) |
+| `totalForms` | Total forms extracted from the original PDF |
+| `pageRange` | Pages from original PDF (e.g., "1-2", "3-4") |
+| `originalPageCount` | Total pages in the original PDF |
 
 **Partition Key:** `/sourceFile`
 
@@ -987,7 +1100,7 @@ The deployment script automatically deploys artifacts from:
 
 ---
 
-## Project Structure
+## 📁 Project Structure
 
 ```
 azure-doc-intel-pipeline/
@@ -1006,13 +1119,22 @@ azure-doc-intel-pipeline/
 │       ├── dev.bicepparam               # Development environment (new deployment)
 │       ├── prod.bicepparam              # Production environment (new deployment)
 │       └── existing.bicepparam          # Existing resources mode (Option B/C)
+├── .github/
+│   └── workflows/
+│       └── ci.yml                   # GitHub Actions CI/CD pipeline
 ├── src/
 │   ├── functions/                    # Azure Functions (Python v2)
-│   │   ├── function_app.py           # HTTP trigger definitions
+│   │   ├── function_app.py           # HTTP + Blob triggers (PDF processing)
 │   │   ├── config.py                 # Configuration management
+│   │   ├── models.py                 # Pydantic models for API validation
+│   │   ├── Dockerfile                # Container deployment support
 │   │   ├── services/                 # Business logic
 │   │   │   ├── document_service.py   # Document Intelligence client
 │   │   │   ├── cosmos_service.py     # Cosmos DB client
+│   │   │   ├── blob_service.py       # Blob storage & SAS token generation
+│   │   │   ├── pdf_service.py        # PDF splitting with pypdf
+│   │   │   ├── telemetry_service.py  # Application Insights custom metrics
+│   │   │   ├── webhook_service.py    # Webhook notifications
 │   │   │   └── __init__.py           # Service factory
 │   │   ├── requirements.txt          # Python dependencies
 │   │   ├── host.json                 # Functions host config
@@ -1025,6 +1147,16 @@ azure-doc-intel-pipeline/
 │       └── sqlscript/                # SQL serverless query scripts
 ├── scripts/
 │   └── Deploy-SynapseArtifacts.ps1  # Synapse artifact deployment script
+├── docs/                             # Project documentation
+│   ├── README.md                     # Documentation index
+│   ├── DOCUMENTATION-STANDARDS.md   # Visual & writing guidelines
+│   ├── azure-services/               # Azure service documentation
+│   │   └── README.md                 # All Azure services used
+│   ├── guides/                       # How-to guides
+│   │   ├── document-intelligence-custom-models.md
+│   │   └── document-intelligence-studio-walkthrough.md
+│   └── diagrams/                     # Architecture diagrams
+│       └── architecture.excalidraw   # System architecture (Excalidraw)
 ├── notebooks/                        # Polyglot notebooks for guided workflows
 │   ├── 00-Getting-Started.ipynb     # Prerequisites and setup
 │   ├── 01-Deployment-New-Resources.ipynb
@@ -1040,7 +1172,9 @@ azure-doc-intel-pipeline/
 │   └── integration/                  # Integration tests
 ├── .env.example                      # Environment template
 ├── .gitignore                        # Git ignore rules
+├── .pre-commit-config.yaml           # Pre-commit hooks configuration
 ├── deploy.config.example             # Deployment configuration template
+├── docker-compose.yml                # Docker Compose for local development
 ├── pyproject.toml                    # Project configuration
 ├── CLAUDE.md                         # AI assistant instructions
 └── README.md                         # This file
@@ -1048,7 +1182,7 @@ azure-doc-intel-pipeline/
 
 ---
 
-## Configuration Reference
+## ⚙️ Configuration Reference
 
 ### Environment Variables
 
@@ -1065,6 +1199,11 @@ azure-doc-intel-pipeline/
 | `DEFAULT_MODEL_ID` | Default Document Intelligence model | No | `prebuilt-layout` |
 | `FUNCTION_TIMEOUT` | Function timeout in seconds | No | `230` |
 | `LOG_LEVEL` | Logging level | No | `INFO` |
+| `WEBHOOK_URL` | URL to notify on processing completion | No | - |
+| `DEAD_LETTER_CONTAINER` | Container for failed documents | No | `dead-letter` |
+| `MAX_RETRY_ATTEMPTS` | Max retries before dead letter | No | `3` |
+| `APPINSIGHTS_INSTRUMENTATIONKEY` | Application Insights key | No | - |
+| `STORAGE_CONNECTION_STRING` | Storage connection string (for blob trigger) | For trigger | - |
 
 ### Deployment Mode Parameter
 
@@ -1108,7 +1247,7 @@ az <command> --subscription "<NAME_OR_ID>"
 
 ---
 
-## Troubleshooting
+## 🔧 Troubleshooting
 
 ### Common Issues
 
@@ -1287,7 +1426,228 @@ az monitor scheduled-query create \
 
 ---
 
-## Contributing
+## 🚀 CI/CD Pipeline
+
+This project includes a complete GitHub Actions CI/CD pipeline in `.github/workflows/ci.yml`.
+
+### Pipeline Jobs
+
+| Job | Trigger | Description |
+|-----|---------|-------------|
+| **lint** | All pushes/PRs | Ruff linting, formatting check, MyPy type checking |
+| **lint-bicep** | All pushes/PRs | Bicep template validation |
+| **test** | All pushes/PRs | Unit tests with 70% coverage threshold |
+| **integration-test** | Push to main only | Integration tests against Azure resources |
+| **build** | All pushes/PRs | Build function package artifact |
+| **deploy** | Push to main only | Deploy to Azure Functions (manual approval) |
+
+### Running Locally
+
+```bash
+# Install pre-commit hooks
+uv run pre-commit install
+
+# Run all hooks manually
+uv run pre-commit run --all-files
+
+# Skip hooks for a single commit (not recommended)
+git commit --no-verify -m "message"
+```
+
+### Pre-commit Hooks
+
+The `.pre-commit-config.yaml` configures:
+- **ruff** - Fast Python linter
+- **ruff-format** - Code formatting
+- **mypy** - Type checking
+- **trailing-whitespace** - Remove trailing whitespace
+- **detect-secrets** - Prevent committing secrets
+- **bicep-lint** - Validate Bicep templates
+
+---
+
+## 🐳 Docker Support
+
+Run the Azure Function locally using Docker.
+
+### Build and Run
+
+```bash
+# Build the Docker image
+docker build -t docproc-functions ./src/functions
+
+# Run with environment variables
+docker run -p 7071:80 \
+  -e DOC_INTEL_ENDPOINT="https://..." \
+  -e DOC_INTEL_API_KEY="..." \
+  -e COSMOS_ENDPOINT="https://..." \
+  docproc-functions
+```
+
+### Docker Compose
+
+For local development with Azurite (Azure Storage emulator):
+
+```bash
+# Start services
+docker-compose up -d
+
+# View logs
+docker-compose logs -f functions
+
+# Stop services
+docker-compose down
+```
+
+### Environment Variables
+
+Create a `.env` file for Docker Compose:
+
+```bash
+cp .env.example .env
+# Edit .env with your Azure resource details
+```
+
+---
+
+## 🔔 Webhook Notifications
+
+Configure webhook notifications to receive real-time updates when documents are processed.
+
+### Configuration
+
+Set the `WEBHOOK_URL` environment variable:
+
+```bash
+# In local.settings.json or Azure Function App Settings
+WEBHOOK_URL=https://your-webhook-endpoint.com/documents
+```
+
+### Payload Format
+
+**Processing Complete:**
+```json
+{
+  "event": "processing.complete",
+  "timestamp": "2024-01-15T10:30:00Z",
+  "data": {
+    "sourceFile": "folder/document.pdf",
+    "status": "completed",
+    "formCount": 3,
+    "modelId": "custom-model-v1"
+  }
+}
+```
+
+**Dead Letter:**
+```json
+{
+  "event": "processing.dead_letter",
+  "timestamp": "2024-01-15T10:30:00Z",
+  "data": {
+    "sourceFile": "folder/document.pdf",
+    "error": "Rate limit exceeded after 3 retries",
+    "retryCount": 3
+  }
+}
+```
+
+### Retry Behavior
+
+- Webhooks are sent with 3 retry attempts
+- Exponential backoff: 1s, 2s, 4s delays
+- Failures are logged but don't affect document processing
+
+---
+
+## 📊 Application Insights Telemetry
+
+Custom metrics and events are tracked for monitoring and alerting.
+
+### Custom Metrics
+
+| Metric | Description | Dimensions |
+|--------|-------------|------------|
+| `forms_processed` | Count of forms extracted | `model_id`, `status` |
+| `processing_duration_ms` | Time to process document | `model_id` |
+| `retry_count` | Number of retry attempts | `source_file` |
+| `dead_letter_count` | Documents moved to dead letter | `error_type` |
+
+### Querying in Application Insights
+
+```kusto
+// Forms processed per hour
+customMetrics
+| where name == "forms_processed"
+| summarize count() by bin(timestamp, 1h), tostring(customDimensions.model_id)
+
+// Average processing time by model
+customMetrics
+| where name == "processing_duration_ms"
+| summarize avg(value) by tostring(customDimensions.model_id)
+
+// Dead letter rate
+customMetrics
+| where name == "dead_letter_count"
+| summarize count() by bin(timestamp, 1d)
+```
+
+### Enable Telemetry
+
+Set the Application Insights instrumentation key:
+
+```bash
+APPINSIGHTS_INSTRUMENTATIONKEY=your-instrumentation-key
+```
+
+---
+
+## ☠️ Dead Letter Queue
+
+Failed documents are automatically moved to a dead letter container after exhausting retries.
+
+### Configuration
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `DEAD_LETTER_CONTAINER` | `dead-letter` | Container for failed documents |
+| `MAX_RETRY_ATTEMPTS` | `3` | Max retries before dead letter |
+
+### Workflow
+
+1. Document processing fails
+2. Retry count incremented in Cosmos DB
+3. If retries < max: Document stays in processing queue
+4. If retries >= max: Document moved to dead letter container
+5. Webhook notification sent (if configured)
+
+### Reprocessing Dead Letters
+
+```bash
+# Reprocess a specific document
+curl -X POST http://localhost:7071/api/reprocess/folder/document.pdf
+
+# Response if retry allowed
+{"status": "success", "message": "Reprocessing started", "retryCount": 2}
+
+# Response if max retries exceeded
+{"status": "error", "message": "Document has exceeded max retry attempts (3)"}
+```
+
+### Monitoring Dead Letters
+
+```kusto
+// Query dead letters in Log Analytics
+AzureDiagnostics
+| where ResourceProvider == "MICROSOFT.STORAGE"
+| where Category == "StorageBlobLogs"
+| where ObjectKey contains "dead-letter"
+| project TimeGenerated, ObjectKey, OperationName
+```
+
+---
+
+## 🤝 Contributing
 
 1. Create a feature branch from `main`
 2. Make changes following existing code patterns
@@ -1302,6 +1662,6 @@ az monitor scheduled-query create \
 
 ---
 
-## License
+## 📄 License
 
 MIT License

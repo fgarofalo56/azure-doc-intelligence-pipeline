@@ -8,6 +8,8 @@ from .blob_service import BlobService
 from .cosmos_service import CosmosService
 from .document_service import DocumentService
 from .pdf_service import PdfService
+from .telemetry_service import TelemetryService, get_telemetry_service
+from .webhook_service import WebhookService, get_webhook_service
 
 # Global service instances
 _document_service: DocumentService | None = None
@@ -105,9 +107,13 @@ __all__ = [
     "CosmosService",
     "BlobService",
     "PdfService",
+    "TelemetryService",
+    "WebhookService",
     "get_document_service",
     "get_cosmos_service",
     "get_blob_service",
     "get_pdf_service",
+    "get_telemetry_service",
+    "get_webhook_service",
     "reset_services",
 ]

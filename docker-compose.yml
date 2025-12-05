@@ -1,0 +1,47 @@
+version: '3.8'
+
+services:
+  functions:
+    build:
+      context: ./src/functions
+      dockerfile: Dockerfile
+    ports:
+      - "7071:80"
+    environment:
+      - AzureWebJobsStorage=${AZURE_STORAGE_CONNECTION_STRING}
+      - DOC_INTEL_ENDPOINT=${DOC_INTEL_ENDPOINT}
+      - DOC_INTEL_API_KEY=${DOC_INTEL_API_KEY}
+      - COSMOS_ENDPOINT=${COSMOS_ENDPOINT}
+      - COSMOS_DATABASE=${COSMOS_DATABASE:-DocumentsDB}
+      - COSMOS_CONTAINER=${COSMOS_CONTAINER:-ExtractedDocuments}
+      - DEFAULT_MODEL_ID=${DEFAULT_MODEL_ID:-prebuilt-layout}
+      - MAX_CONCURRENT_REQUESTS=${MAX_CONCURRENT_REQUESTS:-3}
+      - WEBHOOK_URL=${WEBHOOK_URL:-}
+      - DEAD_LETTER_CONTAINER=${DEAD_LETTER_CONTAINER:-_dead_letter}
+    env_file:
+      - .env
+    volumes:
+      - ./src/functions:/home/site/wwwroot:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # Optional: Azurite for local storage emulation
+  azurite:
+    image: mcr.microsoft.com/azure-storage/azurite
+    ports:
+      - "10000:10000"  # Blob
+      - "10001:10001"  # Queue
+      - "10002:10002"  # Table
+    volumes:
+      - azurite-data:/data
+    command: azurite --blobHost 0.0.0.0 --queueHost 0.0.0.0 --tableHost 0.0.0.0
+    profiles:
+      - local
+
+volumes:
+  azurite-data:

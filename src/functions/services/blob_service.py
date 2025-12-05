@@ -266,3 +266,95 @@ class BlobService:
             raise
         except Exception as e:
             raise BlobServiceError(f"Failed to parse blob URL: {e}") from e
+
+    def list_blobs(
+        self,
+        container_name: str,
+        prefix: str | None = None,
+    ) -> list[str]:
+        """List blobs in a container with optional prefix filter.
+
+        Args:
+            container_name: Container name.
+            prefix: Optional blob name prefix filter.
+
+        Returns:
+            list[str]: List of blob names.
+
+        Raises:
+            BlobServiceError: If list operation fails.
+        """
+        try:
+            container_client = self.client.get_container_client(container_name)
+            blobs = container_client.list_blobs(name_starts_with=prefix)
+            return [blob.name for blob in blobs]
+
+        except Exception as e:
+            logger.exception(f"Failed to list blobs: {e}")
+            raise BlobServiceError(f"Blob list failed: {e}") from e
+
+    def move_blob(
+        self,
+        source_container: str,
+        source_blob: str,
+        dest_container: str,
+        dest_blob: str | None = None,
+    ) -> str:
+        """Move a blob from one location to another.
+
+        Args:
+            source_container: Source container name.
+            source_blob: Source blob name.
+            dest_container: Destination container name.
+            dest_blob: Destination blob name (defaults to source name).
+
+        Returns:
+            str: Destination blob URL.
+
+        Raises:
+            BlobServiceError: If move operation fails.
+        """
+        try:
+            dest_blob = dest_blob or source_blob
+
+            # Get source blob
+            source_container_client = self.client.get_container_client(source_container)
+            source_blob_client = source_container_client.get_blob_client(source_blob)
+
+            # Create destination container if needed
+            dest_container_client = self.client.get_container_client(dest_container)
+            try:
+                dest_container_client.create_container()
+            except Exception:
+                pass  # Container may already exist
+
+            # Copy to destination
+            dest_blob_client = dest_container_client.get_blob_client(dest_blob)
+            dest_blob_client.start_copy_from_url(source_blob_client.url)
+
+            # Delete source
+            source_blob_client.delete_blob()
+
+            logger.info(f"Moved blob from {source_container}/{source_blob} to {dest_container}/{dest_blob}")
+            return dest_blob_client.url
+
+        except Exception as e:
+            logger.exception(f"Failed to move blob: {e}")
+            raise BlobServiceError(f"Blob move failed: {e}") from e
+
+    def blob_exists(self, container_name: str, blob_name: str) -> bool:
+        """Check if a blob exists.
+
+        Args:
+            container_name: Container name.
+            blob_name: Blob name.
+
+        Returns:
+            bool: True if blob exists.
+        """
+        try:
+            container_client = self.client.get_container_client(container_name)
+            blob_client = container_client.get_blob_client(blob_name)
+            return blob_client.exists()
+        except Exception:
+            return False

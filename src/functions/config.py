@@ -39,6 +39,13 @@ class Config:
     default_model_id: str
     sas_token_expiry_hours: int
 
+    # Webhook settings
+    webhook_url: str | None
+
+    # Dead letter settings
+    dead_letter_container: str
+    max_retry_attempts: int
+
     @classmethod
     def from_environment(cls) -> "Config":
         """Load configuration from environment variables.
@@ -83,6 +90,9 @@ class Config:
             max_concurrent_requests=int(os.getenv("MAX_CONCURRENT_REQUESTS", "10")),
             default_model_id=os.getenv("DEFAULT_MODEL_ID", "prebuilt-layout"),
             sas_token_expiry_hours=int(os.getenv("SAS_TOKEN_EXPIRY_HOURS", "1")),
+            webhook_url=os.getenv("WEBHOOK_URL"),
+            dead_letter_container=os.getenv("DEAD_LETTER_CONTAINER", "_dead_letter"),
+            max_retry_attempts=int(os.getenv("MAX_RETRY_ATTEMPTS", "3")),
         )
 
 

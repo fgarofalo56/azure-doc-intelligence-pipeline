@@ -56,6 +56,62 @@ class DocumentService:
         self.initial_retry_delay = initial_retry_delay
         # CRITICAL: Use semaphore for concurrency control to stay below 15 TPS
         self.semaphore = asyncio.Semaphore(max_concurrent)
+        # Cache of validated models
+        self._validated_models: set[str] = set()
+
+    async def validate_model(self, model_id: str) -> bool:
+        """Validate that a model exists and is accessible.
+
+        Args:
+            model_id: Document Intelligence model ID.
+
+        Returns:
+            bool: True if model is valid and accessible.
+
+        Raises:
+            DocumentProcessingError: If model validation fails.
+        """
+        # Prebuilt models are always valid
+        if model_id.startswith("prebuilt-"):
+            return True
+
+        # Check cache first
+        if model_id in self._validated_models:
+            return True
+
+        try:
+            async with DocumentIntelligenceClient(
+                endpoint=self.endpoint,
+                credential=self.credential,
+            ) as client:
+                # Try to get model info
+                model_info = await client.get_analyze_result_figure(
+                    model_id=model_id,
+                    result_id="validation-check",
+                    figure_id="0",
+                )
+                # If we get here without 404, model exists (though figure won't exist)
+                self._validated_models.add(model_id)
+                return True
+
+        except HttpResponseError as e:
+            if e.status_code == 404:
+                # Check if it's the figure that's not found (expected) or the model
+                if "model" in str(e.message).lower():
+                    logger.error(f"Model '{model_id}' not found")
+                    raise DocumentProcessingError(
+                        model_id, f"Model not found: {model_id}"
+                    ) from e
+                # Figure not found is expected, model is valid
+                self._validated_models.add(model_id)
+                return True
+            raise DocumentProcessingError(
+                model_id, f"Model validation failed: {e.message}"
+            ) from e
+        except Exception as e:
+            # For other errors, assume model might be valid and let processing fail if not
+            logger.warning(f"Could not validate model {model_id}: {e}")
+            return True
 
     async def analyze_document(
         self,

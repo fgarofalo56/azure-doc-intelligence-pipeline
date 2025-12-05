@@ -199,3 +199,122 @@ class CosmosService:
         if doc:
             return doc.get("status")
         return None
+
+    async def query_by_source_file(
+        self,
+        source_file: str,
+    ) -> list[dict[str, Any]]:
+        """Get all documents for a source file (all forms from a PDF).
+
+        Uses partition key for efficient single-partition query.
+
+        Args:
+            source_file: Source file path (partition key).
+
+        Returns:
+            list: All documents with matching sourceFile.
+        """
+        query = "SELECT * FROM c WHERE c.sourceFile = @sourceFile ORDER BY c.formNumber"
+        parameters = [{"name": "@sourceFile", "value": source_file}]
+
+        return await self.query_documents(
+            query=query,
+            parameters=parameters,
+            partition_key=source_file,
+        )
+
+    async def delete_document(
+        self,
+        doc_id: str,
+        partition_key: str,
+    ) -> bool:
+        """Delete a document by ID.
+
+        Args:
+            doc_id: Document ID.
+            partition_key: Partition key value (sourceFile).
+
+        Returns:
+            bool: True if deleted, False if not found.
+
+        Raises:
+            CosmosError: If delete operation fails.
+        """
+        try:
+            async with CosmosClient(
+                url=self.endpoint,
+                credential=self.credential,
+            ) as client:
+                database = client.get_database_client(self.database_name)
+                container = database.get_container_client(self.container_name)
+
+                await container.delete_item(
+                    item=doc_id,
+                    partition_key=partition_key,
+                )
+                logger.info(f"Deleted document {doc_id}")
+                return True
+
+        except CosmosHttpResponseError as e:
+            if e.status_code == 404:
+                logger.info(f"Document {doc_id} not found for deletion")
+                return False
+            logger.error(f"Cosmos DB error: {e.message}")
+            raise CosmosError("delete", e.message) from e
+        except Exception as e:
+            logger.exception(f"Unexpected error deleting document: {e}")
+            raise CosmosError("delete", str(e)) from e
+
+    async def delete_by_source_file(
+        self,
+        source_file: str,
+    ) -> int:
+        """Delete all documents for a source file.
+
+        Args:
+            source_file: Source file path (partition key).
+
+        Returns:
+            int: Number of documents deleted.
+
+        Raises:
+            CosmosError: If delete operation fails.
+        """
+        # First get all documents
+        docs = await self.query_by_source_file(source_file)
+
+        deleted_count = 0
+        for doc in docs:
+            if await self.delete_document(doc["id"], source_file):
+                deleted_count += 1
+
+        logger.info(f"Deleted {deleted_count} documents for {source_file}")
+        return deleted_count
+
+    async def increment_retry_count(
+        self,
+        doc_id: str,
+        partition_key: str,
+    ) -> int:
+        """Increment retry count for a document.
+
+        Args:
+            doc_id: Document ID.
+            partition_key: Partition key value (sourceFile).
+
+        Returns:
+            int: New retry count.
+
+        Raises:
+            CosmosError: If update fails.
+        """
+        doc = await self.get_document(doc_id, partition_key)
+        if not doc:
+            raise CosmosError("increment_retry", f"Document {doc_id} not found")
+
+        retry_count = doc.get("retryCount", 0) + 1
+        doc["retryCount"] = retry_count
+        doc["status"] = "pending"  # Reset status for retry
+
+        await self.save_document_result(doc)
+        return retry_count

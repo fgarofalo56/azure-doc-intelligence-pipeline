@@ -1,0 +1,18 @@
+# CODEOWNERS - Defines code ownership for pull request reviews
+# https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Default owner for everything in the repo
+* @fgarofalo56
+
+# Infrastructure changes require owner approval
+/infra/ @fgarofalo56
+
+# Function code changes
+/src/functions/ @fgarofalo56
+
+# CI/CD changes
+/.github/ @fgarofalo56
+
+# Documentation
+/docs/ @fgarofalo56
+*.md @fgarofalo56

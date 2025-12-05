@@ -17,7 +17,15 @@
     "MAX_CONCURRENT_REQUESTS": "10",
     "DEFAULT_MODEL_ID": "prebuilt-layout",
     "FUNCTION_TIMEOUT": "230",
-    "LOG_LEVEL": "INFO"
+    "LOG_LEVEL": "INFO",
+
+    "STORAGE_CONNECTION_STRING": "<REPLACE_WITH_STORAGE_CONNECTION_STRING>",
+
+    "WEBHOOK_URL": "",
+    "DEAD_LETTER_CONTAINER": "dead-letter",
+    "MAX_RETRY_ATTEMPTS": "3",
+
+    "APPINSIGHTS_INSTRUMENTATIONKEY": ""
   },
   "Host": {
     "CORS": "*",
