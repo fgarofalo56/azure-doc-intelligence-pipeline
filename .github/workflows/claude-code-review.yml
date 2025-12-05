@@ -20,9 +20,9 @@ jobs:
 
     runs-on: ubuntu-latest
     permissions:
-      contents: read
-      pull-requests: read
-      issues: read
+      contents: write
+      pull-requests: write
+      issues: write
       id-token: write
 
     steps:
@@ -40,18 +40,30 @@ jobs:
             REPO: ${{ github.repository }}
             PR NUMBER: ${{ github.event.pull_request.number }}
 
-            Please review this pull request and provide feedback on:
-            - Code quality and best practices
-            - Potential bugs or issues
-            - Performance considerations
-            - Security concerns
-            - Test coverage
+            You are an automated code reviewer. Review this pull request thoroughly:
 
-            Use the repository's CLAUDE.md for guidance on style and conventions. Be constructive and helpful in your feedback.
+            1. **Review the changes** - Analyze for:
+               - Code quality and best practices
+               - Potential bugs or issues
+               - Performance considerations
+               - Security concerns (NEVER approve PRs with secrets, credentials, or security vulnerabilities)
+               - Test coverage
 
-            Use `gh pr comment` with your Bash tool to leave your review as a comment on the PR.
+            2. **Make a decision:**
+               - If the PR is **safe to merge** (routine updates, dependency bumps, documentation, minor fixes with no security issues):
+                 → Approve the PR using `gh pr review --approve`
+                 → Then merge it using `gh pr merge --squash`
+               - If the PR **needs changes** (bugs, security issues, breaking changes, or significant concerns):
+                 → Leave a detailed review comment explaining what needs to be fixed
+                 → Do NOT approve or merge
+
+            3. **Dependabot PRs**: Dependency update PRs from Dependabot are generally safe to approve and merge unless they introduce breaking changes.
+
+            4. **Use the repository's CLAUDE.md** for guidance on style and conventions.
+
+            Always leave a summary comment on the PR explaining your decision.
 
           # See https://github.com/anthropics/claude-code-action/blob/main/docs/usage.md
           # or https://code.claude.com/docs/en/cli-reference for available options
-          claude_args: '--allowed-tools "Bash(gh issue view:*),Bash(gh search:*),Bash(gh issue list:*),Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr list:*)"'
+          claude_args: '--allowed-tools "Bash(gh issue view:*),Bash(gh search:*),Bash(gh issue list:*),Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr list:*),Bash(gh pr review:*),Bash(gh pr merge:*)"'
 
