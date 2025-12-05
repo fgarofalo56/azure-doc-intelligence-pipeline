@@ -2,6 +2,81 @@
 
 > **Automated document processing pipeline with PDF splitting, parallel extraction, and intelligent form processing**
 
+<div align="center">
+
+```mermaid
+flowchart LR
+    subgraph Input["📦 Input"]
+        Blob["Azure Blob<br/>(PDFs)"]
+    end
+
+    subgraph Orchestration["🔄 Synapse"]
+        Pipeline["Pipeline"]
+    end
+
+    subgraph Processing["⚡ Function"]
+        Split["PDF Split"]
+    end
+
+    subgraph AI["🤖 Doc Intel"]
+        Extract["Extract"]
+    end
+
+    subgraph Output["📦 Output"]
+        Cosmos["🗄️ Cosmos DB"]
+        Splits["📄 Split PDFs"]
+    end
+
+    Blob --> Pipeline --> Split --> Extract
+    Extract --> Cosmos
+    Extract --> Splits
+
+    style Blob fill:#deebff,stroke:#0078D4
+    style Pipeline fill:#ede9fe,stroke:#7C3AED
+    style Split fill:#fef3c7,stroke:#F59E0B
+    style Extract fill:#fee2e2,stroke:#DC2626
+    style Cosmos fill:#d1fae5,stroke:#059669
+    style Splits fill:#deebff,stroke:#0078D4
+```
+
+</div>
+
+## 📋 Project Summary
+
+This Azure-based pipeline automates the extraction of structured data from PDF documents using AI. It's designed for scenarios like processing **multi-page forms** (e.g., agricultural surveys, applications, invoices) where each document contains multiple 2-page forms that need individual extraction.
+
+### What It Does
+
+| Step | Description |
+|------|-------------|
+| **1. Ingest** | PDFs uploaded to Azure Blob Storage `incoming/` folder |
+| **2. Split** | Multi-page PDFs automatically split into 2-page form chunks |
+| **3. Extract** | Azure Document Intelligence (custom or prebuilt models) extracts fields |
+| **4. Store** | Extracted data saved to Cosmos DB with links to source PDFs |
+| **5. Archive** | Split PDFs stored in `_splits/` folder for review |
+
+### Tech Stack
+
+| Component | Technology |
+|-----------|------------|
+| **Infrastructure** | Azure Bicep (IaC) |
+| **Orchestration** | Azure Synapse Analytics |
+| **Processing** | Azure Functions (Python) |
+| **AI/ML** | Azure Document Intelligence |
+| **Database** | Azure Cosmos DB (NoSQL) |
+| **Storage** | Azure Blob Storage |
+| **Secrets** | Azure Key Vault |
+| **Monitoring** | Application Insights + Log Analytics |
+
+### Quick Links
+
+| Resource | Link |
+|----------|------|
+| 📚 **Full Documentation** | [`docs/README.md`](./docs/README.md) |
+| 🏗️ **Architecture Diagram** | [`docs/diagrams/architecture.excalidraw`](./docs/diagrams/architecture.excalidraw) |
+| 📓 **Interactive Notebooks** | [`notebooks/`](./notebooks/) |
+| 🤖 **Custom Models Guide** | [`docs/guides/document-intelligence-custom-models.md`](./docs/guides/document-intelligence-custom-models.md) |
+
 ---
 
 ## 📑 Table of Contents
