@@ -108,32 +108,42 @@ This project includes **Polyglot Notebooks** (`.ipynb`) for step-by-step guidanc
 
 ## 🏗️ Architecture
 
-```
-┌─────────────────────────────────────────────────────────────────────────────────┐
-│                         PDF Processing Pipeline                                  │
-├─────────────────────────────────────────────────────────────────────────────────┤
-│                                                                                  │
-│   📦 Blob Storage            🔄 Synapse Pipeline           ⚡ Azure Function    │
-│   (incoming/ PDFs)     →     (orchestration)          →    (HTTP Trigger)       │
-│                                                                  │              │
-│                                                                  ▼              │
-│                                                        ┌─────────────────┐      │
-│                                                        │  PDF Splitting  │      │
-│                                                        │  (2-page forms) │      │
-│                                                        └────────┬────────┘      │
-│                                                                  │              │
-│                               ┌──────────────────────────────────┼──────────┐   │
-│                               │                                  │          │   │
-│                               ▼                                  ▼          ▼   │
-│   📦 Blob Storage       🤖 Document Intelligence          🗄️ Cosmos DB        │
-│   (_splits/ PDFs)   ←   (parallel extraction)        →    (results + links)    │
-│                               │                                                  │
-│                               └──────────────────────────────────────────────┐  │
-│                                                                              │  │
-│   🔐 Key Vault              📊 Log Analytics              📈 App Insights   │  │
-│   (secrets)            ←    (centralized logs)       ←    (APM)        ←────┘  │
-│                                                                                  │
-└─────────────────────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+    subgraph Input["📦 Input"]
+        Blob["Blob Storage<br/>(incoming/ PDFs)"]
+    end
+
+    subgraph Orchestration["🔄 Orchestration"]
+        Synapse["Synapse Pipeline"]
+    end
+
+    subgraph Processing["⚡ Azure Function"]
+        Trigger["HTTP/Blob Trigger"]
+        Split["PDF Splitting<br/>(2-page forms)"]
+        Trigger --> Split
+    end
+
+    subgraph AI["🤖 Document Intelligence"]
+        DocIntel["Parallel Extraction<br/>(3 concurrent)"]
+    end
+
+    subgraph Storage["📦 Storage"]
+        Splits["Blob Storage<br/>(_splits/ PDFs)"]
+        Cosmos["🗄️ Cosmos DB<br/>(results + links)"]
+    end
+
+    subgraph Monitoring["📊 Monitoring"]
+        KeyVault["🔐 Key Vault<br/>(secrets)"]
+        LogAnalytics["📊 Log Analytics"]
+        AppInsights["📈 App Insights"]
+    end
+
+    Blob --> Synapse --> Trigger
+    Split --> DocIntel
+    DocIntel --> Splits
+    DocIntel --> Cosmos
+    DocIntel --> AppInsights --> LogAnalytics --> KeyVault
 ```
 
 ### 📊 Data Flow

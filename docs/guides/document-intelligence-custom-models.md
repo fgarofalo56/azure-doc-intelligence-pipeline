@@ -59,45 +59,37 @@ Azure Document Intelligence (formerly Form Recognizer) provides AI-powered docum
 
 ### Decision Matrix
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    Which Model to Use?                       │
-├─────────────────────────────────────────────────────────────┤
-│                                                              │
-│  Are your documents identical in layout?                     │
-│  (Same positions, same formatting)                           │
-│                                                              │
-│         YES                              NO                  │
-│          │                                │                  │
-│          ▼                                ▼                  │
-│  ┌───────────────┐              ┌─────────────────┐         │
-│  │   TEMPLATE    │              │     NEURAL      │         │
-│  │    MODEL      │              │     MODEL       │         │
-│  └───────────────┘              └─────────────────┘         │
-│                                                              │
-│  Examples:                       Examples:                   │
-│  • Government forms              • Invoices (various vendors)│
-│  • Tax forms (W-2, 1040)        • Contracts                 │
-│  • Applications                  • Letters                   │
-│  • Surveys                       • Mixed-format documents    │
-└─────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TD
+    Question{"Are your documents<br/>identical in layout?<br/>(Same positions, formatting)"}
+
+    Question -->|YES| Template["🏛️ TEMPLATE MODEL"]
+    Question -->|NO| Neural["🧠 NEURAL MODEL"]
+
+    Template --> TemplateEx["Examples:<br/>• Government forms<br/>• Tax forms (W-2, 1040)<br/>• Applications<br/>• Surveys"]
+    Neural --> NeuralEx["Examples:<br/>• Invoices (various vendors)<br/>• Contracts<br/>• Letters<br/>• Mixed-format documents"]
+
+    style Template fill:#4CAF50,color:#fff
+    style Neural fill:#2196F3,color:#fff
 ```
 
 ### Composed Models
 
 Combine up to **200 custom models** into a single endpoint:
 
-```
-┌─────────────────────────────────────────────┐
-│            Composed Model                    │
-├─────────────────────────────────────────────┤
-│                                             │
-│    Document → [Auto Router] → Model A       │
-│                            → Model B        │
-│                            → Model C        │
-│                                             │
-│    Returns: Best matching model's results   │
-└─────────────────────────────────────────────┘
+```mermaid
+flowchart LR
+    Doc["📄 Document"] --> Router["🔀 Auto Router"]
+    Router --> A["Model A"]
+    Router --> B["Model B"]
+    Router --> C["Model C"]
+
+    A --> Result["✅ Best Match Results"]
+    B -.-> Result
+    C -.-> Result
+
+    style Router fill:#FF9800,color:#fff
+    style Result fill:#4CAF50,color:#fff
 ```
 
 **Use Cases:**
@@ -202,27 +194,25 @@ This pipeline uses **custom models** because:
 
 #### Step 2: Configure Azure Resources
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                   Resource Configuration                     │
-├─────────────────────────────────────────────────────────────┤
-│                                                              │
-│  Document Intelligence Resource:                             │
-│  ┌─────────────────────────────────────────────────────┐    │
-│  │ Subscription: [Your Subscription]                    │    │
-│  │ Resource:     docproc-docintel-dev                  │    │
-│  │ API Version:  2024-02-29-preview                    │    │
-│  └─────────────────────────────────────────────────────┘    │
-│                                                              │
-│  Storage Account (for training data):                        │
-│  ┌─────────────────────────────────────────────────────┐    │
-│  │ Subscription: [Your Subscription]                    │    │
-│  │ Storage:      docprocstorage                        │    │
-│  │ Container:    training-data                         │    │
-│  │ Folder:       ag-surveys/                           │    │
-│  └─────────────────────────────────────────────────────┘    │
-│                                                              │
-└─────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+    subgraph DocIntel["🤖 Document Intelligence Resource"]
+        DI_Sub["Subscription: [Your Subscription]"]
+        DI_Res["Resource: docproc-docintel-dev"]
+        DI_API["API Version: 2024-02-29-preview"]
+    end
+
+    subgraph Storage["📦 Storage Account (Training Data)"]
+        ST_Sub["Subscription: [Your Subscription]"]
+        ST_Acc["Storage: docprocstorage"]
+        ST_Con["Container: training-data"]
+        ST_Fld["Folder: ag-surveys/"]
+    end
+
+    DocIntel -.->|"Reads training data"| Storage
+
+    style DocIntel fill:#E3F2FD
+    style Storage fill:#FFF3E0
 ```
 
 #### Step 3: Required RBAC Permissions

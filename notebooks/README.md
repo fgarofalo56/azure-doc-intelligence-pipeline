@@ -40,26 +40,43 @@ Interactive notebooks for deploying, configuring, testing, and troubleshooting t
 
 ## Deployment Paths
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                    Choose Your Path                              │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                  │
-│  Fresh Start (no existing resources)?                           │
-│    └─> 00-Getting-Started → 01-Deployment-New-Resources         │
-│                                                                  │
-│  Have existing Azure resources?                                 │
-│    └─> 00-Getting-Started → 02-Deployment-Existing-Resources    │
-│                                                                  │
-│  Local development only?                                        │
-│    └─> 00-Getting-Started → 03-Local-Development                │
-│                                                                  │
-│  After any deployment:                                          │
-│    └─> 05-Synapse-Pipeline (run documents)                      │
-│    └─> 06-Analytics-SynapseLink (analyze results)               │
-│    └─> 07-Monitoring-Troubleshooting (if issues)                │
-│                                                                  │
-└─────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TD
+    subgraph Start["🚀 Choose Your Path"]
+        GS["00-Getting-Started"]
+    end
+
+    subgraph Fresh["Fresh Start (no existing resources)"]
+        New["01-Deployment-New-Resources"]
+    end
+
+    subgraph Existing["Have existing Azure resources"]
+        Exist["02-Deployment-Existing-Resources"]
+    end
+
+    subgraph Local["Local development only"]
+        Dev["03-Local-Development"]
+    end
+
+    subgraph PostDeploy["After any deployment"]
+        Synapse["05-Synapse-Pipeline<br/>(run documents)"]
+        Analytics["06-Analytics-SynapseLink<br/>(analyze results)"]
+        Monitor["07-Monitoring-Troubleshooting<br/>(if issues)"]
+    end
+
+    GS --> New
+    GS --> Exist
+    GS --> Dev
+
+    New --> Synapse
+    Exist --> Synapse
+    Synapse --> Analytics
+    Analytics --> Monitor
+
+    style GS fill:#fef3c7,stroke:#F59E0B
+    style New fill:#d1fae5,stroke:#059669
+    style Exist fill:#deebff,stroke:#0078D4
+    style Dev fill:#ede9fe,stroke:#7C3AED
 ```
 
 ## Notebook Features

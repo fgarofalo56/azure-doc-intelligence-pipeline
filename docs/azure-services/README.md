@@ -215,11 +215,14 @@ Orchestrate batch PDF processing with pipelines.
 
 ### Pipeline: ProcessPDFsWithDocIntelligence
 
-```
-┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│  GetMetadata    │ ──▶ │  Filter PDFs    │ ──▶ │   ForEach PDF   │
-│  (list files)   │     │  (*.pdf only)   │     │  (call Function)│
-└─────────────────┘     └─────────────────┘     └─────────────────┘
+```mermaid
+flowchart LR
+    GetMetadata["📋 GetMetadata<br/>(list files)"] --> FilterPDFs["🔍 Filter PDFs<br/>(*.pdf only)"]
+    FilterPDFs --> ForEach["🔄 ForEach PDF<br/>(call Function)"]
+
+    style GetMetadata fill:#ede9fe,stroke:#7C3AED
+    style FilterPDFs fill:#ede9fe,stroke:#7C3AED
+    style ForEach fill:#ede9fe,stroke:#7C3AED
 ```
 
 ### Configuration
@@ -311,22 +314,23 @@ APPLICATIONINSIGHTS_SAMPLING_PERCENTAGE=20
 
 ### Authentication Flow
 
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                     Authentication Architecture                      │
-├─────────────────────────────────────────────────────────────────────┤
-│                                                                      │
-│  Synapse ──[Function Key from KV]──▶ Function App                   │
-│                                           │                          │
-│                                           ├──[Managed Identity]──▶ Cosmos DB
-│                                           │                          │
-│                                           ├──[API Key from KV]──▶ Doc Intel
-│                                           │                          │
-│                                           └──[Connection String]──▶ Blob Storage
-│                                                                      │
-│  All Services ──[Managed Identity]──▶ Log Analytics                 │
-│                                                                      │
-└─────────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart LR
+    subgraph Auth["🔐 Authentication Architecture"]
+        Synapse["🔄 Synapse"] -->|Function Key from KV| FuncApp["⚡ Function App"]
+        FuncApp -->|Managed Identity| Cosmos["🗄️ Cosmos DB"]
+        FuncApp -->|API Key from KV| DocIntel["🤖 Doc Intel"]
+        FuncApp -->|Connection String| Blob["📦 Blob Storage"]
+
+        AllServices["All Services"] -->|Managed Identity| LogAnalytics["📊 Log Analytics"]
+    end
+
+    style Synapse fill:#ede9fe,stroke:#7C3AED
+    style FuncApp fill:#fef3c7,stroke:#F59E0B
+    style Cosmos fill:#d1fae5,stroke:#059669
+    style DocIntel fill:#fee2e2,stroke:#DC2626
+    style Blob fill:#deebff,stroke:#0078D4
+    style LogAnalytics fill:#e0f2fe,stroke:#0EA5E9
 ```
 
 ### Required RBAC Roles

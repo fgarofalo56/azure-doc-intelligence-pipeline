@@ -59,23 +59,39 @@
 
 ## 🏗️ Architecture Overview
 
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                     PDF Processing Pipeline                          │
-├─────────────────────────────────────────────────────────────────────┤
-│                                                                      │
-│   📦 Blob Storage          🔄 Synapse Pipeline         ⚡ Function   │
-│   (incoming PDFs)    →    (orchestration)        →    (processing)  │
-│                                                            │        │
-│                                                            ▼        │
-│   🔐 Key Vault            📊 Log Analytics         🤖 Document      │
-│   (secrets)          ←    (monitoring)           ←    Intelligence  │
-│                                                            │        │
-│                                                            ▼        │
-│   📦 Blob Storage         📈 App Insights          🗄️ Cosmos DB    │
-│   (_splits/ PDFs)    ←    (APM)                  ←    (results)     │
-│                                                                      │
-└─────────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart LR
+    subgraph Input["📦 Input"]
+        Blob["Blob Storage<br/>(incoming PDFs)"]
+    end
+
+    subgraph Orchestration["🔄 Orchestration"]
+        Synapse["Synapse Pipeline"]
+    end
+
+    subgraph Processing["⚡ Processing"]
+        Function["Azure Function"]
+        DocIntel["🤖 Document Intelligence"]
+        Function --> DocIntel
+    end
+
+    subgraph Output["📦 Output"]
+        Splits["Blob Storage<br/>(_splits/ PDFs)"]
+        Cosmos["🗄️ Cosmos DB<br/>(results)"]
+    end
+
+    subgraph Monitoring["📊 Monitoring"]
+        KeyVault["🔐 Key Vault"]
+        LogAnalytics["📊 Log Analytics"]
+        AppInsights["📈 App Insights"]
+    end
+
+    Blob --> Synapse --> Function
+    DocIntel --> Splits
+    DocIntel --> Cosmos
+    DocIntel --> AppInsights
+    AppInsights --> LogAnalytics
+    Function -.-> KeyVault
 ```
 
 ### Data Flow
