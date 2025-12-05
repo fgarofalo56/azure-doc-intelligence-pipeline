@@ -31,10 +31,22 @@
 
 This pipeline automates document processing through the following flow:
 
-```
-PDF Upload → Blob Storage → Synapse Pipeline → Azure Function → Document Intelligence → Cosmos DB
-                                    ↓
-                         Key Vault (Secrets) + App Insights (Monitoring)
+```mermaid
+flowchart LR
+    Upload["📄 PDF Upload"] --> Blob["📦 Blob Storage"]
+    Blob --> Synapse["🔄 Synapse Pipeline"]
+    Synapse --> Function["⚡ Azure Function"]
+    Function --> DocIntel["🤖 Document Intelligence"]
+    DocIntel --> Cosmos["🗄️ Cosmos DB"]
+
+    Function -.-> KeyVault["🔐 Key Vault"]
+    Function -.-> AppInsights["📈 App Insights"]
+
+    style Blob fill:#deebff,stroke:#0078D4
+    style Synapse fill:#ede9fe,stroke:#7C3AED
+    style Function fill:#fef3c7,stroke:#F59E0B
+    style DocIntel fill:#fee2e2,stroke:#DC2626
+    style Cosmos fill:#d1fae5,stroke:#059669
 ```
 
 ### Key Capabilities

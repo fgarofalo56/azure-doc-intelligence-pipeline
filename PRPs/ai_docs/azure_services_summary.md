@@ -9,10 +9,15 @@
 
 ## Architecture at a Glance
 
-```
-PDF → Blob Storage → Synapse Pipeline → Function App → Doc Intelligence → Cosmos DB
-                                              ↓
-                                      Key Vault + Monitoring
+```mermaid
+flowchart LR
+    PDF["📄 PDF"] --> Blob["📦 Blob Storage"]
+    Blob --> Synapse["🔄 Synapse"]
+    Synapse --> Function["⚡ Function"]
+    Function --> DocIntel["🤖 Doc Intel"]
+    DocIntel --> Cosmos["🗄️ Cosmos DB"]
+    Function -.-> KV["🔐 Key Vault"]
+    Function -.-> Monitor["📊 Monitoring"]
 ```
 
 **Core Flow:**
