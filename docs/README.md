@@ -26,9 +26,9 @@
 
 | Diagram | Description |
 |---------|-------------|
-| [🏗️ Architecture Overview](./diagrams/FormExtraction_docs_diagrams_architecture.svg) | High-level system architecture (SVG) |
-| [🔍 Detailed Architecture](./diagrams/architecture-detailed.excalidraw) | Comprehensive Azure architecture with all components (Excalidraw) |
-| [📐 Architecture Source](./diagrams/architecture.excalidraw) | Original architecture diagram (Excalidraw source) |
+| [🏗️ Architecture Overview](./diagrams/architecture-overview.md) | High-level system architecture with explanations |
+| [🔍 Detailed Architecture](./diagrams/architecture-detailed.md) | Comprehensive Azure architecture with all components |
+| [📐 Architecture Source (SVG)](./diagrams/FormExtraction_docs_diagrams_architecture.svg) | Architecture diagram (SVG export) |
 
 ### 📋 Standards
 
@@ -63,7 +63,7 @@
 
 ![Architecture Diagram](./diagrams/FormExtraction_docs_diagrams_architecture.svg)
 
-> 📌 **For a comprehensive view**, see the [Detailed Architecture Diagram](./diagrams/architecture-detailed.excalidraw) which includes all Azure components, data flows, security layers, and monitoring infrastructure.
+> 📌 **For a comprehensive view**, see the [Detailed Architecture](./diagrams/architecture-detailed.md) which includes all Azure components, data flows, security layers, and monitoring infrastructure.
 
 ### Data Flow
 

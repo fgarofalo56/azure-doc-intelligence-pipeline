@@ -40,7 +40,7 @@ This Azure-based pipeline automates the extraction of structured data from PDF d
 | Resource | Link |
 |----------|------|
 | 📚 **Full Documentation** | [`docs/README.md`](./docs/README.md) |
-| 🏗️ **Architecture Diagram** | [`docs/diagrams/architecture.excalidraw`](./docs/diagrams/architecture.excalidraw) |
+| 🏗️ **Architecture Diagram** | [`docs/diagrams/architecture-overview.md`](./docs/diagrams/architecture-overview.md) |
 | 📓 **Interactive Notebooks** | [`notebooks/`](./notebooks/) |
 | 🤖 **Custom Models Guide** | [`docs/guides/document-intelligence-custom-models.md`](./docs/guides/document-intelligence-custom-models.md) |
 
@@ -125,7 +125,7 @@ Comprehensive documentation is available in the [`docs/`](./docs/) folder:
 | [🤖 Custom Models Guide](./docs/guides/document-intelligence-custom-models.md) | Building and training custom extraction models |
 | [🖥️ Studio Walkthrough](./docs/guides/document-intelligence-studio-walkthrough.md) | Step-by-step Document Intelligence Studio guide |
 | [📝 Documentation Standards](./docs/DOCUMENTATION-STANDARDS.md) | Visual and writing guidelines |
-| [🏗️ Architecture Diagram](./docs/diagrams/architecture.excalidraw) | System architecture (Excalidraw) |
+| [🏗️ Architecture Diagram](./docs/diagrams/architecture-overview.md) | System architecture with detailed explanations |
 
 ---
 
