@@ -1111,3 +1111,516 @@ class TestErrorHandlers:
             assert response.status_code == 500
             body = json.loads(response.get_body().decode())
             assert "Internal server error" in body["error"]
+
+
+class TestGetDocumentStatusErrors:
+    """Tests for GetDocumentStatus error handling."""
+
+    @pytest.mark.asyncio
+    async def test_get_status_cosmos_error(self, mock_cosmos_service):
+        """Test GetDocumentStatus with CosmosError."""
+        from function_app import get_document_status
+        from services.cosmos_service import CosmosError
+
+        mock_cosmos_service.get_document.side_effect = CosmosError("get_document", "Connection failed")
+
+        req = create_mock_request(
+            method="GET",
+            body={},
+            route_params={"blob_name": "test.pdf"},
+        )
+
+        response = await get_document_status(req)
+
+        assert response.status_code == 500
+        body = json.loads(response.get_body().decode())
+        assert "Database error" in body["error"]
+
+    @pytest.mark.asyncio
+    async def test_get_status_unexpected_error(self, mock_cosmos_service):
+        """Test GetDocumentStatus with unexpected error."""
+        from function_app import get_document_status
+
+        mock_cosmos_service.get_document.side_effect = RuntimeError("Unexpected")
+
+        req = create_mock_request(
+            method="GET",
+            body={},
+            route_params={"blob_name": "test.pdf"},
+        )
+
+        response = await get_document_status(req)
+
+        assert response.status_code == 500
+        body = json.loads(response.get_body().decode())
+        assert "Internal server error" in body["error"]
+
+
+class TestGetBatchStatusErrors:
+    """Tests for GetBatchStatus error handling."""
+
+    @pytest.mark.asyncio
+    async def test_batch_status_cosmos_error(self, mock_cosmos_service):
+        """Test GetBatchStatus with CosmosError."""
+        from function_app import get_batch_status
+        from services.cosmos_service import CosmosError
+
+        mock_cosmos_service.query_by_source_file.side_effect = CosmosError("query", "Query failed")
+
+        req = create_mock_request(
+            method="GET",
+            body={},
+            route_params={"blob_name": "test.pdf"},
+        )
+
+        response = await get_batch_status(req)
+
+        assert response.status_code == 500
+        body = json.loads(response.get_body().decode())
+        assert "Database error" in body["error"]
+
+    @pytest.mark.asyncio
+    async def test_batch_status_unexpected_error(self, mock_cosmos_service):
+        """Test GetBatchStatus with unexpected error."""
+        from function_app import get_batch_status
+
+        mock_cosmos_service.query_by_source_file.side_effect = RuntimeError("Unexpected")
+
+        req = create_mock_request(
+            method="GET",
+            body={},
+            route_params={"blob_name": "test.pdf"},
+        )
+
+        response = await get_batch_status(req)
+
+        assert response.status_code == 500
+        body = json.loads(response.get_body().decode())
+        assert "Internal server error" in body["error"]
+
+
+class TestDeleteDocumentErrors:
+    """Tests for DeleteDocument error handling."""
+
+    @pytest.mark.asyncio
+    async def test_delete_split_blob_error(self, mock_cosmos_service, mock_blob_service):
+        """Test delete with split blob deletion error."""
+        from function_app import delete_document
+        from services.blob_service import BlobServiceError
+
+        mock_cosmos_service.delete_by_source_file = AsyncMock(return_value=2)
+        mock_blob_service.list_blobs.return_value = ["_splits/test_form1.pdf"]
+        mock_blob_service.delete_blob.side_effect = BlobServiceError("Delete failed")
+
+        req = create_mock_request(
+            method="DELETE",
+            body={},
+            route_params={"blob_name": "pdfs/test.pdf"},
+            params={"deleteSplits": "true", "deleteOriginal": "false"},
+        )
+
+        response = await delete_document(req)
+
+        assert response.status_code == 200
+        body = json.loads(response.get_body().decode())
+        assert body["status"] == "partial"
+        assert len(body["errors"]) > 0
+
+    @pytest.mark.asyncio
+    async def test_delete_list_blobs_error(self, mock_cosmos_service, mock_blob_service):
+        """Test delete with list blobs error."""
+        from function_app import delete_document
+        from services.blob_service import BlobServiceError
+
+        mock_cosmos_service.delete_by_source_file = AsyncMock(return_value=2)
+        mock_blob_service.list_blobs.side_effect = BlobServiceError("List failed")
+
+        req = create_mock_request(
+            method="DELETE",
+            body={},
+            route_params={"blob_name": "pdfs/test.pdf"},
+            params={"deleteSplits": "true"},
+        )
+
+        response = await delete_document(req)
+
+        assert response.status_code == 200
+        body = json.loads(response.get_body().decode())
+        assert "Failed to list" in str(body["errors"])
+
+    @pytest.mark.asyncio
+    async def test_delete_original_success(self, mock_cosmos_service, mock_blob_service):
+        """Test delete with original blob deletion."""
+        from function_app import delete_document
+
+        mock_cosmos_service.delete_by_source_file = AsyncMock(return_value=1)
+        mock_blob_service.list_blobs.return_value = []
+        mock_blob_service.parse_blob_url.return_value = ("pdfs", "test.pdf")
+        mock_blob_service.delete_blob = MagicMock()
+
+        req = create_mock_request(
+            method="DELETE",
+            body={},
+            route_params={"blob_name": "pdfs/test.pdf"},
+            params={"deleteSplits": "false", "deleteOriginal": "true"},
+        )
+
+        response = await delete_document(req)
+
+        assert response.status_code == 200
+        body = json.loads(response.get_body().decode())
+        assert body["deletedBlobs"] == 1
+
+    @pytest.mark.asyncio
+    async def test_delete_original_error(self, mock_cosmos_service, mock_blob_service):
+        """Test delete with original blob deletion error."""
+        from function_app import delete_document
+        from services.blob_service import BlobServiceError
+
+        mock_cosmos_service.delete_by_source_file = AsyncMock(return_value=1)
+        mock_blob_service.list_blobs.return_value = []
+        mock_blob_service.parse_blob_url.return_value = ("pdfs", "test.pdf")
+        mock_blob_service.delete_blob.side_effect = BlobServiceError("Delete original failed")
+
+        req = create_mock_request(
+            method="DELETE",
+            body={},
+            route_params={"blob_name": "pdfs/test.pdf"},
+            params={"deleteSplits": "false", "deleteOriginal": "true"},
+        )
+
+        response = await delete_document(req)
+
+        assert response.status_code == 200
+        body = json.loads(response.get_body().decode())
+        assert "Failed to delete original" in str(body["errors"])
+
+    @pytest.mark.asyncio
+    async def test_delete_cosmos_error(self, mock_cosmos_service):
+        """Test delete with CosmosError."""
+        from function_app import delete_document
+        from services.cosmos_service import CosmosError
+
+        mock_cosmos_service.delete_by_source_file.side_effect = CosmosError("delete", "Delete failed")
+
+        req = create_mock_request(
+            method="DELETE",
+            body={},
+            route_params={"blob_name": "test.pdf"},
+        )
+
+        response = await delete_document(req)
+
+        assert response.status_code == 500
+        body = json.loads(response.get_body().decode())
+        assert "Database error" in body["error"]
+
+    @pytest.mark.asyncio
+    async def test_delete_unexpected_error(self, mock_cosmos_service):
+        """Test delete with unexpected error."""
+        from function_app import delete_document
+
+        mock_cosmos_service.delete_by_source_file.side_effect = RuntimeError("Unexpected")
+
+        req = create_mock_request(
+            method="DELETE",
+            body={},
+            route_params={"blob_name": "test.pdf"},
+        )
+
+        response = await delete_document(req)
+
+        assert response.status_code == 500
+        body = json.loads(response.get_body().decode())
+        assert "Internal server error" in body["error"]
+
+
+class TestReprocessErrors:
+    """Tests for ReprocessDocument error handling."""
+
+    @pytest.mark.asyncio
+    async def test_reprocess_unexpected_exception(self):
+        """Test reprocess with unexpected exception."""
+        from function_app import reprocess_document
+
+        with patch("function_app.get_config") as mock_config, \
+             patch("function_app.get_blob_service") as mock_blob, \
+             patch("function_app.get_cosmos_service") as mock_cosmos:
+            config = MagicMock()
+            config.default_model_id = "prebuilt-layout"
+            config.max_retry_attempts = 3
+            mock_config.return_value = config
+
+            blob_service = MagicMock()
+            blob_service.generate_sas_url.return_value = "https://storage/test.pdf?sas=token"
+            blob_service.client.account_name = "teststorage"
+            mock_blob.return_value = blob_service
+
+            cosmos = AsyncMock()
+            # Return a failed document to pass initial checks
+            cosmos.query_by_source_file.return_value = [
+                {"id": "test_pdf", "status": "failed", "retryCount": 0}
+            ]
+            # Throw error when incrementing retry count
+            cosmos.increment_retry_count.side_effect = RuntimeError("Unexpected error")
+            mock_cosmos.return_value = cosmos
+
+            req = create_mock_request(
+                method="POST",
+                body={},
+                route_params={"blob_name": "test.pdf"},
+            )
+
+            response = await reprocess_document(req)
+
+            assert response.status_code == 500
+            body = json.loads(response.get_body().decode())
+            assert "Reprocess failed" in body["error"]
+
+
+class TestProcessMultiModelComplete:
+    """Complete tests for ProcessMultiModel endpoint."""
+
+    @pytest.fixture
+    def mock_all_services(self):
+        """Mock all services needed for multi-model processing."""
+        with patch("function_app.get_config") as mock_config, \
+             patch("function_app.get_blob_service") as mock_blob, \
+             patch("function_app.get_pdf_service") as mock_pdf, \
+             patch("function_app.get_document_service") as mock_doc, \
+             patch("function_app.get_cosmos_service") as mock_cosmos, \
+             patch("function_app.get_webhook_service") as mock_webhook:
+
+            config = MagicMock()
+            config.default_model_id = "prebuilt-layout"
+            mock_config.return_value = config
+
+            blob_service = MagicMock()
+            blob_service.download_blob.return_value = b"PDF content"
+            blob_service.parse_blob_url.return_value = ("pdfs", "test.pdf")
+            blob_service.upload_blob.return_value = "https://storage/pdfs/_splits/chunk.pdf"
+            blob_service.generate_sas_url.return_value = "https://storage/pdfs/_splits/chunk.pdf?sas=token"
+            mock_blob.return_value = blob_service
+
+            pdf_service = MagicMock()
+            pdf_service.get_page_count.return_value = 4
+            pdf_service.extract_pages.return_value = b"Chunk PDF content"
+            mock_pdf.return_value = pdf_service
+
+            doc_service = AsyncMock()
+            doc_service.analyze_document.return_value = {
+                "modelId": "test-model",
+                "status": "completed",
+                "fields": {"test": "value"},
+                "confidence": {"test": 0.95},
+            }
+            mock_doc.return_value = doc_service
+
+            cosmos_service = AsyncMock()
+            cosmos_service.save_document_result.return_value = {"id": "doc1"}
+            mock_cosmos.return_value = cosmos_service
+
+            webhook_service = AsyncMock()
+            mock_webhook.return_value = webhook_service
+
+            yield {
+                "config": config,
+                "blob": blob_service,
+                "pdf": pdf_service,
+                "doc": doc_service,
+                "cosmos": cosmos_service,
+                "webhook": webhook_service,
+            }
+
+    @pytest.mark.asyncio
+    async def test_multi_model_success(self, mock_all_services):
+        """Test successful multi-model processing."""
+        from function_app import process_multi_model
+
+        req = create_mock_request(
+            body={
+                "blobUrl": "https://storage/pdfs/test.pdf",
+                "blobName": "test.pdf",
+                "modelMapping": {
+                    "1-2": "model-a",
+                    "3-4": "model-b",
+                },
+            }
+        )
+
+        response = await process_multi_model(req)
+
+        assert response.status_code == 200
+        body = json.loads(response.get_body().decode())
+        assert body["status"] == "success"
+        assert body["rangesProcessed"] == 2
+        assert body["totalRanges"] == 2
+
+    @pytest.mark.asyncio
+    async def test_multi_model_page_out_of_bounds(self, mock_all_services):
+        """Test multi-model with page range out of bounds."""
+        from function_app import process_multi_model
+
+        req = create_mock_request(
+            body={
+                "blobUrl": "https://storage/pdfs/test.pdf",
+                "blobName": "test.pdf",
+                "modelMapping": {
+                    "1-2": "model-a",
+                    "5-6": "model-b",  # Out of bounds (doc has 4 pages)
+                },
+            }
+        )
+
+        response = await process_multi_model(req)
+
+        assert response.status_code == 200
+        body = json.loads(response.get_body().decode())
+        assert body["status"] == "partial"
+        assert body["rangesProcessed"] == 1
+        # Check for out of bounds error
+        failed_results = [r for r in body["results"] if r["status"] == "failed"]
+        assert len(failed_results) == 1
+        assert "out of bounds" in failed_results[0]["error"]
+
+    @pytest.mark.asyncio
+    async def test_multi_model_processing_error(self, mock_all_services):
+        """Test multi-model with processing error for one range."""
+        from function_app import process_multi_model
+
+        # Make second analysis fail
+        mock_all_services["doc"].analyze_document.side_effect = [
+            {"modelId": "model-a", "status": "completed", "fields": {}},
+            Exception("Processing failed"),
+        ]
+
+        req = create_mock_request(
+            body={
+                "blobUrl": "https://storage/pdfs/test.pdf",
+                "blobName": "test.pdf",
+                "modelMapping": {
+                    "1-2": "model-a",
+                    "3-4": "model-b",
+                },
+            }
+        )
+
+        response = await process_multi_model(req)
+
+        assert response.status_code == 200
+        body = json.loads(response.get_body().decode())
+        assert body["status"] == "partial"
+
+    @pytest.mark.asyncio
+    async def test_multi_model_all_fail(self, mock_all_services):
+        """Test multi-model when all ranges fail."""
+        from function_app import process_multi_model
+
+        mock_all_services["doc"].analyze_document.side_effect = Exception("All fail")
+
+        req = create_mock_request(
+            body={
+                "blobUrl": "https://storage/pdfs/test.pdf",
+                "blobName": "test.pdf",
+                "modelMapping": {
+                    "1-2": "model-a",
+                    "3-4": "model-b",
+                },
+            }
+        )
+
+        response = await process_multi_model(req)
+
+        assert response.status_code == 200
+        body = json.loads(response.get_body().decode())
+        assert body["status"] == "failed"
+        assert body["rangesProcessed"] == 0
+
+    @pytest.mark.asyncio
+    async def test_multi_model_with_webhook(self, mock_all_services):
+        """Test multi-model with webhook notification."""
+        from function_app import process_multi_model
+
+        req = create_mock_request(
+            body={
+                "blobUrl": "https://storage/pdfs/test.pdf",
+                "blobName": "test.pdf",
+                "modelMapping": {"1-2": "model-a"},
+                "webhookUrl": "https://webhook.example.com/notify",
+            }
+        )
+
+        response = await process_multi_model(req)
+
+        assert response.status_code == 200
+        mock_all_services["webhook"].notify_processing_complete.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_multi_model_storage_not_configured(self):
+        """Test multi-model when storage not configured."""
+        from function_app import process_multi_model
+
+        with patch("function_app.get_config") as mock_config, \
+             patch("function_app.get_blob_service") as mock_blob:
+            mock_config.return_value = MagicMock()
+            mock_blob.return_value = None
+
+            req = create_mock_request(
+                body={
+                    "blobUrl": "https://test.pdf",
+                    "blobName": "test.pdf",
+                    "modelMapping": {"1-2": "model"},
+                }
+            )
+
+            response = await process_multi_model(req)
+
+            assert response.status_code == 500
+            body = json.loads(response.get_body().decode())
+            assert "Storage not configured" in body["error"]
+
+    @pytest.mark.asyncio
+    async def test_multi_model_exception(self):
+        """Test multi-model with top-level exception."""
+        from function_app import process_multi_model
+
+        with patch("function_app.get_config") as mock_config, \
+             patch("function_app.get_blob_service") as mock_blob:
+            mock_config.return_value = MagicMock()
+            mock_blob.side_effect = RuntimeError("Service unavailable")
+
+            req = create_mock_request(
+                body={
+                    "blobUrl": "https://test.pdf",
+                    "blobName": "test.pdf",
+                    "modelMapping": {"1-2": "model"},
+                }
+            )
+
+            response = await process_multi_model(req)
+
+            assert response.status_code == 500
+            body = json.loads(response.get_body().decode())
+            assert "Multi-model processing failed" in body["error"]
+
+    @pytest.mark.asyncio
+    async def test_multi_model_single_page_range(self, mock_all_services):
+        """Test multi-model with single page (e.g., '3' instead of '3-4')."""
+        from function_app import process_multi_model
+
+        req = create_mock_request(
+            body={
+                "blobUrl": "https://storage/pdfs/test.pdf",
+                "blobName": "test.pdf",
+                "modelMapping": {
+                    "1": "model-a",  # Single page, no dash
+                    "2-3": "model-b",
+                },
+            }
+        )
+
+        response = await process_multi_model(req)
+
+        assert response.status_code == 200
+        body = json.loads(response.get_body().decode())
+        assert body["rangesProcessed"] == 2
