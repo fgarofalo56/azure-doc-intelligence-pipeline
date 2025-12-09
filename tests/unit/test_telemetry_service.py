@@ -1,5 +1,7 @@
 """Unit tests for the telemetry service."""
 
+import logging
+
 from unittest.mock import MagicMock, patch
 
 
@@ -28,6 +30,7 @@ class TestTelemetryService:
 
     def test_track_form_processed_disabled(self, caplog):
         """Test track_form_processed logs when disabled."""
+        caplog.set_level(logging.INFO)
         with patch.dict("os.environ", {}, clear=True):
             from src.functions.services.telemetry_service import TelemetryService
 

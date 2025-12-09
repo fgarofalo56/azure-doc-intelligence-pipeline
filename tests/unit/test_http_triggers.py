@@ -75,12 +75,44 @@ def mock_cosmos_service():
         yield service
 
 
+@pytest.fixture
+def mock_blob_service():
+    """Mock BlobService."""
+    with patch("function_app.get_blob_service") as mock:
+        service = MagicMock()
+        service.generate_sas_url = MagicMock(
+            return_value="https://storage.blob.core.windows.net/pdfs/folder/test.pdf?sas=token"
+        )
+        service.parse_blob_url = MagicMock(return_value=("pdfs", "folder/test.pdf"))
+        service.download_blob = MagicMock(return_value=b"%PDF-1.4 fake pdf content")
+        service.list_blobs = MagicMock(return_value=[])
+        mock.return_value = service
+        yield service
+
+
+@pytest.fixture
+def mock_pdf_service():
+    """Mock PdfService."""
+    with patch("function_app.get_pdf_service") as mock:
+        service = MagicMock()
+        # Return page count of 2 (single form)
+        service.get_page_count = MagicMock(return_value=2)
+        # Return single chunk (no splitting needed for 2-page PDF)
+        service.split_pdf = MagicMock(
+            return_value=[
+                (b"chunk1_bytes", {"start_page": 1, "end_page": 2, "form_number": 1})
+            ]
+        )
+        mock.return_value = service
+        yield service
+
+
 class TestProcessDocument:
     """Tests for ProcessDocument HTTP trigger."""
 
     @pytest.mark.asyncio
     async def test_process_document_success(
-        self, mock_config, mock_document_service, mock_cosmos_service
+        self, mock_config, mock_document_service, mock_cosmos_service, mock_blob_service, mock_pdf_service
     ):
         """Test successful document processing."""
         from function_app import process_document
@@ -150,7 +182,7 @@ class TestProcessDocument:
 
     @pytest.mark.asyncio
     async def test_process_document_rate_limit_error(
-        self, mock_config, mock_document_service, mock_cosmos_service
+        self, mock_config, mock_document_service, mock_cosmos_service, mock_blob_service, mock_pdf_service
     ):
         """Test rate limit error handling."""
         from function_app import process_document
@@ -174,7 +206,7 @@ class TestProcessDocument:
 
     @pytest.mark.asyncio
     async def test_process_document_processing_error(
-        self, mock_config, mock_document_service, mock_cosmos_service
+        self, mock_config, mock_document_service, mock_cosmos_service, mock_blob_service, mock_pdf_service
     ):
         """Test document processing error handling."""
         from function_app import process_document
@@ -202,7 +234,7 @@ class TestProcessDocument:
 
     @pytest.mark.asyncio
     async def test_process_document_cosmos_error(
-        self, mock_config, mock_document_service, mock_cosmos_service
+        self, mock_config, mock_document_service, mock_cosmos_service, mock_blob_service, mock_pdf_service
     ):
         """Test Cosmos DB error handling."""
         from function_app import process_document
@@ -228,7 +260,7 @@ class TestProcessDocument:
 
     @pytest.mark.asyncio
     async def test_process_document_uses_default_model(
-        self, mock_config, mock_document_service, mock_cosmos_service
+        self, mock_config, mock_document_service, mock_cosmos_service, mock_blob_service, mock_pdf_service
     ):
         """Test that default model ID is used when not specified."""
         from function_app import process_document
@@ -309,9 +341,16 @@ class TestHealthCheck:
     """Tests for Health HTTP trigger."""
 
     @pytest.mark.asyncio
-    async def test_health_check(self):
+    async def test_health_check(self, mock_config, mock_blob_service):
         """Test health check returns healthy status."""
         from function_app import health_check
+
+        # Configure mock config with required endpoints
+        mock_config.doc_intel_endpoint = "https://doc-intel.cognitiveservices.azure.com"
+        mock_config.cosmos_endpoint = "https://cosmos.documents.azure.com"
+
+        # Mock list_blobs for blob trigger health check
+        mock_blob_service.list_blobs = MagicMock(return_value=[])
 
         req = create_mock_request(method="GET", body={})
 
@@ -321,3 +360,4 @@ class TestHealthCheck:
         body = json.loads(response.get_body().decode())
         assert body["status"] == "healthy"
         assert "timestamp" in body
+        assert "services" in body

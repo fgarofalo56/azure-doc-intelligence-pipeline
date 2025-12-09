@@ -1,5 +1,7 @@
 """Unit tests for the webhook service."""
 
+import logging
+
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
@@ -75,6 +77,7 @@ class TestWebhookService:
     @pytest.mark.asyncio
     async def test_send_notification_no_url(self, caplog):
         """Test send_notification returns False when no URL configured."""
+        caplog.set_level(logging.DEBUG)
         with patch.dict("os.environ", {}, clear=True):
             from src.functions.services.webhook_service import WebhookService
 
