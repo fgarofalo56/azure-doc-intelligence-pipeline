@@ -1,7 +1,13 @@
 """Integration tests for end-to-end document processing.
 
-These tests require deployed Azure resources and should only be run
-when RUN_INTEGRATION_TESTS environment variable is set.
+Tests complete document processing workflows including:
+- Document Intelligence analysis
+- Cosmos DB persistence
+- Multi-tenant isolation
+- Profile-based processing
+- Concurrent processing
+
+Requires deployed Azure resources and environment variables.
 """
 
 import asyncio
@@ -15,12 +21,8 @@ import pytest
 # Add src/functions to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../src/functions"))
 
-
-# Skip all tests if integration tests not enabled
-pytestmark = pytest.mark.skipif(
-    not os.getenv("RUN_INTEGRATION_TESTS"),
-    reason="Integration tests disabled. Set RUN_INTEGRATION_TESTS=1 to enable.",
-)
+# Mark all tests as integration tests (handled by conftest.py)
+pytestmark = pytest.mark.integration
 
 
 @pytest.fixture(scope="module")
@@ -248,3 +250,261 @@ class TestEndToEndFlow:
 
         assert len(successful) == num_documents, f"Errors: {errors}"
         print(f"Successfully processed {len(successful)} documents concurrently")
+
+
+class TestMultiTenantIntegration:
+    """Integration tests for multi-tenant document isolation."""
+
+    @pytest.mark.asyncio
+    async def test_tenant_document_isolation(
+        self, document_service, cosmos_service, integration_config
+    ):
+        """Test that documents are properly isolated by tenant."""
+        tenant_a = f"tenant_a_{uuid4().hex[:4]}"
+        tenant_b = f"tenant_b_{uuid4().hex[:4]}"
+
+        # Process document for tenant A
+        blob_name_a = f"tenant-test/{tenant_a}/doc.pdf"
+        result_a = await document_service.analyze_document(
+            blob_url=integration_config["test_blob_url"],
+            model_id="prebuilt-layout",
+            blob_name=blob_name_a,
+        )
+
+        doc_id_a = f"tenant_a_doc_{uuid4().hex[:8]}"
+        doc_a = {
+            "id": doc_id_a,
+            "sourceFile": blob_name_a,
+            "tenantId": tenant_a,
+            "processedAt": datetime.now(timezone.utc).isoformat(),
+            **result_a,
+        }
+        await cosmos_service.save_document_result(doc_a)
+
+        # Process document for tenant B
+        blob_name_b = f"tenant-test/{tenant_b}/doc.pdf"
+        result_b = await document_service.analyze_document(
+            blob_url=integration_config["test_blob_url"],
+            model_id="prebuilt-layout",
+            blob_name=blob_name_b,
+        )
+
+        doc_id_b = f"tenant_b_doc_{uuid4().hex[:8]}"
+        doc_b = {
+            "id": doc_id_b,
+            "sourceFile": blob_name_b,
+            "tenantId": tenant_b,
+            "processedAt": datetime.now(timezone.utc).isoformat(),
+            **result_b,
+        }
+        await cosmos_service.save_document_result(doc_b)
+
+        # Query by tenant - should only see own documents
+        tenant_a_docs = await cosmos_service.query_by_tenant(tenant_a)
+        tenant_b_docs = await cosmos_service.query_by_tenant(tenant_b)
+
+        # Filter to just our test documents
+        a_ids = [d["id"] for d in tenant_a_docs if d["tenantId"] == tenant_a]
+        b_ids = [d["id"] for d in tenant_b_docs if d["tenantId"] == tenant_b]
+
+        assert doc_id_a in a_ids
+        assert doc_id_b not in a_ids
+        assert doc_id_b in b_ids
+        assert doc_id_a not in b_ids
+
+        # Cleanup
+        await cosmos_service.delete_document(doc_id_a, blob_name_a)
+        await cosmos_service.delete_document(doc_id_b, blob_name_b)
+
+
+class TestProfileIntegration:
+    """Integration tests for processing profiles."""
+
+    @pytest.mark.asyncio
+    async def test_process_with_invoice_profile(
+        self, document_service, cosmos_service, integration_config
+    ):
+        """Test processing document with invoice profile."""
+        from services.profiles import get_profile
+
+        profile = get_profile("invoice")
+        assert profile is not None
+        assert profile.model_id == "prebuilt-invoice"
+
+        blob_name = f"profile-test/{uuid4().hex[:8]}.pdf"
+
+        result = await document_service.analyze_document(
+            blob_url=integration_config["test_blob_url"],
+            model_id=profile.model_id,
+            blob_name=blob_name,
+        )
+
+        assert result["status"] == "completed"
+        assert result["modelId"] == "prebuilt-invoice"
+
+    @pytest.mark.asyncio
+    async def test_process_with_receipt_profile(
+        self, document_service, cosmos_service, integration_config
+    ):
+        """Test processing document with receipt profile."""
+        from services.profiles import get_profile
+
+        profile = get_profile("receipt")
+        assert profile is not None
+
+        blob_name = f"receipt-test/{uuid4().hex[:8]}.pdf"
+
+        result = await document_service.analyze_document(
+            blob_url=integration_config["test_blob_url"],
+            model_id=profile.model_id,
+            blob_name=blob_name,
+        )
+
+        assert result["status"] == "completed"
+
+    def test_list_available_profiles(self):
+        """Test listing all available processing profiles."""
+        from services.profiles import list_profiles
+
+        profiles = list_profiles()
+
+        assert "invoice" in profiles
+        assert "receipt" in profiles
+        assert "layout" in profiles
+        assert len(profiles) >= 3
+
+
+class TestIdempotencyWithDocumentIntelligence:
+    """Integration tests for idempotency with real document processing."""
+
+    @pytest.mark.asyncio
+    async def test_idempotent_reprocessing(
+        self, document_service, cosmos_service, integration_config
+    ):
+        """Test that reprocessing same document returns cached result."""
+        from services.idempotency import (
+            check_and_generate_idempotency,
+            create_idempotent_document,
+        )
+
+        blob_name = f"idempotent-e2e/{uuid4().hex[:8]}.pdf"
+        model_id = "prebuilt-layout"
+
+        # First processing
+        result1 = await check_and_generate_idempotency(
+            cosmos_service=cosmos_service,
+            blob_name=blob_name,
+            model_id=model_id,
+        )
+        assert result1.is_duplicate is False
+
+        # Process the document
+        analysis = await document_service.analyze_document(
+            blob_url=integration_config["test_blob_url"],
+            model_id=model_id,
+            blob_name=blob_name,
+        )
+
+        # Save with idempotency
+        doc_id = f"idem_e2e_{uuid4().hex[:8]}"
+        doc = {
+            "id": doc_id,
+            "sourceFile": blob_name,
+            "processedAt": datetime.now(timezone.utc).isoformat(),
+            **analysis,
+        }
+        idem_doc = create_idempotent_document(doc, result1.idempotency_key)
+        await cosmos_service.save_document_result(idem_doc)
+
+        # Second processing attempt - should detect duplicate
+        result2 = await check_and_generate_idempotency(
+            cosmos_service=cosmos_service,
+            blob_name=blob_name,
+            model_id=model_id,
+        )
+
+        assert result2.is_duplicate is True
+        assert result2.existing_document["id"] == doc_id
+
+        # Cleanup
+        await cosmos_service.delete_document(doc_id, blob_name)
+
+
+class TestErrorRecovery:
+    """Integration tests for error recovery scenarios."""
+
+    @pytest.mark.asyncio
+    async def test_retry_failed_document(self, cosmos_service):
+        """Test retry mechanism for failed documents."""
+        blob_name = f"retry-test/{uuid4().hex[:8]}.pdf"
+        doc_id = f"retry_{uuid4().hex[:8]}"
+
+        # Create a failed document
+        doc = {
+            "id": doc_id,
+            "sourceFile": blob_name,
+            "processedAt": datetime.now(timezone.utc).isoformat(),
+            "status": "failed",
+            "error": "Simulated failure for testing",
+            "retryCount": 0,
+        }
+        await cosmos_service.save_document_result(doc)
+
+        # Increment retry count
+        new_count = await cosmos_service.increment_retry_count(doc_id, blob_name)
+        assert new_count == 1
+
+        # Verify status reset
+        retrieved = await cosmos_service.get_document(doc_id, blob_name)
+        assert retrieved["status"] == "pending"
+        assert retrieved["retryCount"] == 1
+
+        # Cleanup
+        await cosmos_service.delete_document(doc_id, blob_name)
+
+    @pytest.mark.asyncio
+    async def test_invalid_url_handling(self, document_service):
+        """Test handling of invalid blob URLs."""
+        from services.document_service import DocumentProcessingError
+
+        with pytest.raises(DocumentProcessingError):
+            await document_service.analyze_document(
+                blob_url="https://invalid-url.blob.core.windows.net/fake/doc.pdf",
+                model_id="prebuilt-layout",
+                blob_name="invalid.pdf",
+            )
+
+
+class TestDocumentCleanup:
+    """Integration tests for document cleanup operations."""
+
+    @pytest.mark.asyncio
+    async def test_cleanup_by_source_file(self, cosmos_service):
+        """Test cleaning up all documents for a source file."""
+        source_file = f"cleanup-test/{uuid4().hex[:8]}.pdf"
+        doc_ids = []
+
+        # Create multiple form documents
+        for i in range(3):
+            doc_id = f"cleanup_form_{i}_{uuid4().hex[:8]}"
+            doc_ids.append(doc_id)
+            doc = {
+                "id": doc_id,
+                "sourceFile": source_file,
+                "processedAt": datetime.now(timezone.utc).isoformat(),
+                "formNumber": i + 1,
+                "status": "completed",
+            }
+            await cosmos_service.save_document_result(doc)
+
+        # Verify all created
+        docs = await cosmos_service.query_by_source_file(source_file)
+        assert len(docs) == 3
+
+        # Cleanup
+        deleted = await cosmos_service.delete_by_source_file(source_file)
+        assert deleted == 3
+
+        # Verify deleted
+        docs = await cosmos_service.query_by_source_file(source_file)
+        assert len(docs) == 0

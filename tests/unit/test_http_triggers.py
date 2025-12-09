@@ -34,6 +34,8 @@ def mock_config():
     with patch("function_app.get_config") as mock:
         config = MagicMock()
         config.default_model_id = "prebuilt-layout"
+        config.pages_per_form = 2
+        config.concurrent_doc_intel_calls = 3
         mock.return_value = config
         yield config
 
@@ -72,6 +74,8 @@ def mock_cosmos_service():
                 "processedAt": "2024-01-15T10:30:00Z",
             }
         )
+        # Return empty list for idempotency check (no duplicate)
+        service.query_documents = AsyncMock(return_value=[])
         mock.return_value = service
         yield service
 
@@ -418,6 +422,8 @@ class TestReprocessDocument:
             config.default_model_id = "prebuilt-layout"
             config.max_retry_attempts = 3
             config.webhook_url = None
+            config.pages_per_form = 2
+            config.concurrent_doc_intel_calls = 3
             mock_config_fn.return_value = config
 
             cosmos = AsyncMock()
@@ -426,6 +432,7 @@ class TestReprocessDocument:
             ])
             cosmos.save_document_result = AsyncMock()
             cosmos.increment_retry_count = AsyncMock()
+            cosmos.query_documents = AsyncMock(return_value=[])  # No duplicates
             mock_cosmos_fn.return_value = cosmos
 
             blob = MagicMock()
@@ -758,6 +765,9 @@ class TestBatchProcess:
             config = MagicMock()
             config.default_model_id = "prebuilt-layout"
             config.webhook_url = None
+            config.pages_per_form = 2
+            config.concurrent_doc_intel_calls = 3
+            config.batch_max_blobs = 50
             mock_config_fn.return_value = config
 
             blob = MagicMock()
@@ -778,6 +788,7 @@ class TestBatchProcess:
 
             cosmos = AsyncMock()
             cosmos.save_document_result = AsyncMock()
+            cosmos.query_documents = AsyncMock(return_value=[])  # No duplicates
             mock_cosmos_fn.return_value = cosmos
 
             pdf = MagicMock()
@@ -786,6 +797,7 @@ class TestBatchProcess:
 
             telemetry = MagicMock()
             telemetry.track_operation = MagicMock(return_value=MagicMock(__enter__=MagicMock(return_value={}), __exit__=MagicMock()))
+            telemetry.track_batch_processing = MagicMock()
             mock_telemetry_fn.return_value = telemetry
 
             webhook = AsyncMock()
@@ -911,6 +923,8 @@ class TestProcessPdfInternal:
 
             config = MagicMock()
             config.webhook_url = None
+            config.pages_per_form = 2
+            config.concurrent_doc_intel_calls = 3
             mock_config_fn.return_value = config
 
             blob = MagicMock()
@@ -933,6 +947,7 @@ class TestProcessPdfInternal:
 
             cosmos = AsyncMock()
             cosmos.save_document_result = AsyncMock()
+            cosmos.query_documents = AsyncMock(return_value=[])  # No duplicates
             mock_cosmos_fn.return_value = cosmos
 
             pdf = MagicMock()

@@ -340,3 +340,248 @@ class TestTelemetryServiceWithMockedOpenCensus:
 
             # Service should still function
             assert service is not None
+
+
+class TestAdditionalTelemetryMethods:
+    """Tests for additional telemetry service methods."""
+
+    def test_track_metric_disabled(self, caplog):
+        """Test track_metric logs when disabled."""
+        import logging
+
+        caplog.set_level(logging.INFO)
+        with patch.dict("os.environ", {}, clear=True):
+            from src.functions.services.telemetry_service import TelemetryService
+
+            service = TelemetryService()
+            service.track_metric(
+                name="custom_metric",
+                value=42,
+                dimensions={"key1": "value1", "key2": "value2"},
+                metric_type="counter",
+            )
+
+            assert "custom_metric=42" in caplog.text
+            assert "counter" in caplog.text
+            assert "key1=value1" in caplog.text
+
+    def test_track_metric_no_dimensions(self, caplog):
+        """Test track_metric without dimensions."""
+        import logging
+
+        caplog.set_level(logging.INFO)
+        with patch.dict("os.environ", {}, clear=True):
+            from src.functions.services.telemetry_service import TelemetryService
+
+            service = TelemetryService()
+            service.track_metric(name="simple_metric", value=100.5)
+
+            assert "simple_metric=100.5" in caplog.text
+            assert "gauge" in caplog.text  # Default type
+
+    def test_track_batch_processing_disabled(self, caplog):
+        """Test track_batch_processing logs when disabled."""
+        import logging
+
+        caplog.set_level(logging.INFO)
+        with patch.dict("os.environ", {}, clear=True):
+            from src.functions.services.telemetry_service import TelemetryService
+
+            service = TelemetryService()
+            service.track_batch_processing(
+                batch_id="batch-123",
+                total_blobs=10,
+                successful=8,
+                failed=2,
+                duration_ms=5000.0,
+            )
+
+            assert "batch-123" in caplog.text
+            assert "8/10" in caplog.text
+            assert "80.0%" in caplog.text
+
+    def test_track_batch_processing_zero_blobs(self, caplog):
+        """Test track_batch_processing with zero blobs."""
+        import logging
+
+        caplog.set_level(logging.INFO)
+        with patch.dict("os.environ", {}, clear=True):
+            from src.functions.services.telemetry_service import TelemetryService
+
+            service = TelemetryService()
+            service.track_batch_processing(
+                batch_id="empty-batch",
+                total_blobs=0,
+                successful=0,
+                failed=0,
+                duration_ms=100.0,
+            )
+
+            # Should handle division by zero gracefully
+            assert "empty-batch" in caplog.text
+            assert "0%" in caplog.text
+
+    def test_track_profile_usage_disabled(self, caplog):
+        """Test track_profile_usage logs when disabled."""
+        import logging
+
+        caplog.set_level(logging.INFO)
+        with patch.dict("os.environ", {}, clear=True):
+            from src.functions.services.telemetry_service import TelemetryService
+
+            service = TelemetryService()
+            service.track_profile_usage(
+                profile_name="invoice",
+                model_id="prebuilt-invoice",
+            )
+
+            assert "profile_usage=1" in caplog.text
+            assert "profile_name=invoice" in caplog.text
+
+    def test_track_idempotency_hit_disabled(self, caplog):
+        """Test track_idempotency_hit logs when disabled."""
+        import logging
+
+        caplog.set_level(logging.INFO)
+        with patch.dict("os.environ", {}, clear=True):
+            from src.functions.services.telemetry_service import TelemetryService
+
+            service = TelemetryService()
+            service.track_idempotency_hit(
+                blob_name="test/document.pdf",
+                idempotency_key="abc123def456ghi789",
+            )
+
+            assert "Idempotency hit" in caplog.text
+            assert "test/document.pdf" in caplog.text
+            # Key should be truncated
+            assert "abc123def456ghi7..." in caplog.text
+
+    def test_track_queue_job_disabled(self, caplog):
+        """Test track_queue_job logs when disabled."""
+        import logging
+
+        caplog.set_level(logging.INFO)
+        with patch.dict("os.environ", {}, clear=True):
+            from src.functions.services.telemetry_service import TelemetryService
+
+            service = TelemetryService()
+            service.track_queue_job(
+                job_id="job-456",
+                status="completed",
+                wait_time_ms=2500.0,
+            )
+
+            # Should log the metrics
+            assert "queue_job_status=1" in caplog.text
+            assert "queue_wait_time_ms=2500" in caplog.text
+
+    def test_track_queue_job_no_wait_time(self, caplog):
+        """Test track_queue_job without wait time."""
+        import logging
+
+        caplog.set_level(logging.INFO)
+        with patch.dict("os.environ", {}, clear=True):
+            from src.functions.services.telemetry_service import TelemetryService
+
+            service = TelemetryService()
+            service.track_queue_job(
+                job_id="job-789",
+                status="queued",
+                wait_time_ms=None,
+            )
+
+            assert "queue_job_status=1" in caplog.text
+            assert "queue_wait_time_ms" not in caplog.text
+
+    def test_track_metric_enabled_int_value(self):
+        """Test track_metric with integer value when enabled."""
+        with patch.dict("os.environ", {}, clear=True):
+            from src.functions.services.telemetry_service import TelemetryService
+
+            service = TelemetryService()
+            service._enabled = True
+
+            mock_mmap = MagicMock()
+            mock_stats_recorder = MagicMock()
+            mock_stats_recorder.new_measurement_map.return_value = mock_mmap
+            service._stats_recorder = mock_stats_recorder
+
+            # Mock opencensus modules
+            mock_stats = MagicMock()
+            mock_tags = MagicMock()
+
+            with patch.dict(
+                "sys.modules",
+                {
+                    "opencensus.stats": mock_stats,
+                    "opencensus.stats.aggregation": mock_stats.aggregation,
+                    "opencensus.stats.measure": mock_stats.measure,
+                    "opencensus.stats.view": mock_stats.view,
+                    "opencensus.tags": mock_tags,
+                    "opencensus.tags.tag_key": mock_tags.tag_key,
+                    "opencensus.tags.tag_map": mock_tags.tag_map,
+                    "opencensus.tags.tag_value": mock_tags.tag_value,
+                },
+            ):
+                service.track_metric(
+                    name="test_int_metric",
+                    value=42,  # Integer
+                    dimensions={"dim1": "val1"},
+                )
+
+            # Verify measure_int_put was called
+            mock_mmap.measure_int_put.assert_called()
+
+    def test_track_metric_enabled_float_value(self):
+        """Test track_metric with float value when enabled."""
+        with patch.dict("os.environ", {}, clear=True):
+            from src.functions.services.telemetry_service import TelemetryService
+
+            service = TelemetryService()
+            service._enabled = True
+
+            mock_mmap = MagicMock()
+            mock_stats_recorder = MagicMock()
+            mock_stats_recorder.new_measurement_map.return_value = mock_mmap
+            service._stats_recorder = mock_stats_recorder
+
+            mock_stats = MagicMock()
+            mock_tags = MagicMock()
+
+            with patch.dict(
+                "sys.modules",
+                {
+                    "opencensus.stats": mock_stats,
+                    "opencensus.stats.aggregation": mock_stats.aggregation,
+                    "opencensus.stats.measure": mock_stats.measure,
+                    "opencensus.stats.view": mock_stats.view,
+                    "opencensus.tags": mock_tags,
+                    "opencensus.tags.tag_key": mock_tags.tag_key,
+                    "opencensus.tags.tag_map": mock_tags.tag_map,
+                    "opencensus.tags.tag_value": mock_tags.tag_value,
+                },
+            ):
+                service.track_metric(
+                    name="test_float_metric",
+                    value=3.14,  # Float
+                )
+
+            # Verify measure_float_put was called
+            mock_mmap.measure_float_put.assert_called()
+
+    def test_track_metric_enabled_error_handling(self, caplog):
+        """Test track_metric handles errors gracefully when enabled."""
+        with patch.dict("os.environ", {}, clear=True):
+            from src.functions.services.telemetry_service import TelemetryService
+
+            service = TelemetryService()
+            service._enabled = True
+            # Don't set up required attributes
+
+            service.track_metric(
+                name="error_metric",
+                value=1,
+            )
+
+            assert "Failed to track metric" in caplog.text

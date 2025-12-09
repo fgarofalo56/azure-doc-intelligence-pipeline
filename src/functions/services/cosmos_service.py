@@ -318,3 +318,40 @@ class CosmosService:
 
         await self.save_document_result(doc)
         return retry_count
+
+    async def query_by_tenant(
+        self,
+        tenant_id: str,
+        status: str | None = None,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        """Query documents by tenant ID.
+
+        CRITICAL: This is a cross-partition query. Use sparingly and consider
+        adding tenant-specific indexes or using tenant as partition key
+        for high-volume multi-tenant scenarios.
+
+        Args:
+            tenant_id: Tenant identifier.
+            status: Optional status filter.
+            limit: Maximum documents to return.
+
+        Returns:
+            list: Documents belonging to the tenant.
+        """
+        query = "SELECT TOP @limit * FROM c WHERE c.tenantId = @tenantId"
+        parameters: list[dict[str, Any]] = [
+            {"name": "@tenantId", "value": tenant_id},
+            {"name": "@limit", "value": limit},
+        ]
+
+        if status:
+            query = (
+                "SELECT TOP @limit * FROM c "
+                "WHERE c.tenantId = @tenantId AND c.status = @status"
+            )
+            parameters.append({"name": "@status", "value": status})
+
+        query += " ORDER BY c.processedAt DESC"
+
+        return await self.query_documents(query=query, parameters=parameters)

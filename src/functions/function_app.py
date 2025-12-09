@@ -24,20 +24,26 @@ import azure.functions as func
 
 from config import ConfigurationError, get_config
 from services import (
+    PROCESSING_VERSION,
+    JobStatus,
+    check_and_generate_idempotency,
+    create_idempotent_document,
+    create_profile_from_request,
+    generate_content_hash,
     get_blob_service,
     get_cosmos_service,
     get_document_service,
+    get_job_service,
     get_pdf_service,
+    get_profile,
     get_telemetry_service,
     get_webhook_service,
+    list_profiles,
 )
 from services.blob_service import BlobServiceError
 from services.cosmos_service import CosmosError
 from services.document_service import DocumentProcessingError, RateLimitError
 from services.pdf_service import PdfSplitError
-
-# Number of pages per form (forms are 2 pages each)
-PAGES_PER_FORM = 2
 
 # Initialize function app
 app = func.FunctionApp(http_auth_level=func.AuthLevel.FUNCTION)
@@ -77,11 +83,33 @@ def create_error_response(
     )
 
 
+def get_tenant_id(request_tenant_id: str | None = None) -> str:
+    """Get tenant ID from request or use default.
+
+    Args:
+        request_tenant_id: Tenant ID from request body.
+
+    Returns:
+        str: Resolved tenant ID.
+    """
+    config = get_config()
+    if request_tenant_id:
+        return request_tenant_id
+    return config.default_tenant_id
+
+
 async def process_pdf_internal(
     blob_url: str,
     blob_name: str,
     model_id: str,
     webhook_url: str | None = None,
+    pages_per_form_override: int | None = None,
+    confidence_threshold: float | None = None,
+    validate_result: bool = False,
+    profile_name: str | None = None,
+    skip_idempotency_check: bool = False,
+    auto_detect_forms: bool = False,
+    tenant_id: str | None = None,
 ) -> dict[str, Any]:
     """Internal function to process a PDF document.
 
@@ -92,6 +120,13 @@ async def process_pdf_internal(
         blob_name: Blob path within container.
         model_id: Document Intelligence model ID.
         webhook_url: Optional webhook URL for completion notification.
+        pages_per_form_override: Override pages per form from config/profile.
+        confidence_threshold: Minimum confidence threshold for validation.
+        validate_result: Whether to validate extraction against profile rules.
+        profile_name: Name of the processing profile used (for metadata).
+        skip_idempotency_check: Skip duplicate checking (for reprocessing).
+        auto_detect_forms: Use smart form boundary detection instead of fixed pages.
+        tenant_id: Tenant ID for multi-tenant isolation.
 
     Returns:
         dict: Processing result with status, forms processed, etc.
@@ -102,6 +137,10 @@ async def process_pdf_internal(
     config = get_config()
     blob_service = get_blob_service()
     telemetry = get_telemetry_service()
+    cosmos_service = get_cosmos_service()
+
+    # Resolve tenant ID (use provided or default)
+    resolved_tenant_id = get_tenant_id(tenant_id) if config.multi_tenant_enabled else None
 
     if not blob_service:
         raise BlobServiceError("Storage connection not configured")
@@ -110,8 +149,46 @@ async def process_pdf_internal(
     logger.info(f"Downloading PDF: {blob_name}")
     pdf_content = blob_service.download_blob(blob_url)
 
-    # Check if PDF needs splitting
-    pdf_service = get_pdf_service(pages_per_form=PAGES_PER_FORM)
+    # Generate content hash for idempotency
+    content_hash = generate_content_hash(pdf_content)
+
+    # Check idempotency unless explicitly skipped
+    if not skip_idempotency_check:
+        idempotency_result = await check_and_generate_idempotency(
+            cosmos_service=cosmos_service,
+            blob_name=blob_name,
+            model_id=model_id,
+            pages_per_form=pages_per_form_override or config.pages_per_form,
+            content_hash=content_hash,
+        )
+
+        if idempotency_result.is_duplicate:
+            logger.info(f"Duplicate processing detected for {blob_name}, returning cached result")
+            existing_doc = idempotency_result.existing_document
+            return {
+                "status": "duplicate",
+                "message": "Document already processed with same parameters",
+                "documentId": existing_doc.get("id") if existing_doc else None,
+                "processedAt": existing_doc.get("processedAt") if existing_doc else None,
+                "idempotencyKey": idempotency_result.idempotency_key,
+                "cached": True,
+            }
+
+        idempotency_key = idempotency_result.idempotency_key
+    else:
+        # Generate key anyway for storing in document
+        from services.idempotency import generate_idempotency_key
+
+        idempotency_key = generate_idempotency_key(
+            blob_name=blob_name,
+            model_id=model_id,
+            pages_per_form=pages_per_form_override or config.pages_per_form,
+            content_hash=content_hash,
+        )
+
+    # Check if PDF needs splitting - use override if provided
+    pages_per_form = pages_per_form_override or config.pages_per_form
+    pdf_service = get_pdf_service(pages_per_form=pages_per_form)
     page_count = pdf_service.get_page_count(pdf_content)
     logger.info(f"PDF has {page_count} pages")
 
@@ -121,12 +198,11 @@ async def process_pdf_internal(
 
     processed_at = datetime.now(timezone.utc).isoformat()
     doc_service = get_document_service()
-    cosmos_service = get_cosmos_service()
     webhook_service = get_webhook_service()
 
     document_ids: list[str] = []
 
-    if page_count <= PAGES_PER_FORM:
+    if page_count <= pages_per_form:
         # No splitting needed - process as single document
         logger.info("No splitting needed, processing as single form")
 
@@ -146,8 +222,17 @@ async def process_pdf_internal(
                 "processedAt": processed_at,
                 "formNumber": 1,
                 "totalForms": 1,
+                "profileName": profile_name,
+                "pagesPerForm": pages_per_form,
+                "idempotencyKey": idempotency_key,
+                "contentHash": content_hash,
+                "processingVersion": PROCESSING_VERSION,
                 **analysis_result,
             }
+
+            # Add tenant ID if multi-tenant is enabled
+            if resolved_tenant_id:
+                document["tenantId"] = resolved_tenant_id
 
             await cosmos_service.save_document_result(document)
             document_ids.append(doc_id)
@@ -174,15 +259,23 @@ async def process_pdf_internal(
             "formsProcessed": 1,
         }
 
-    # Split PDF into 2-page chunks
-    logger.info(f"Splitting {page_count}-page PDF into {PAGES_PER_FORM}-page forms")
-    chunks = pdf_service.split_pdf(pdf_content)
+    # Split PDF - use smart detection or fixed pages
+    if auto_detect_forms:
+        logger.info(f"Using smart form boundary detection for {page_count}-page PDF")
+        smart_chunks = pdf_service.split_pdf_smart(pdf_content, auto_detect=True)
+        # Convert to standard format (drop confidence for now, keep for logging)
+        chunks = [(c[0], c[1], c[2]) for c in smart_chunks]
+        avg_confidence = sum(c[3] for c in smart_chunks) / len(smart_chunks) if smart_chunks else 1.0
+        logger.info(f"Smart detection found {len(chunks)} forms (avg confidence: {avg_confidence:.2f})")
+    else:
+        logger.info(f"Splitting {page_count}-page PDF into {pages_per_form}-page forms")
+        chunks = pdf_service.split_pdf(pdf_content)
     total_forms = len(chunks)
 
     logger.info(f"Split into {total_forms} forms")
 
     # Process form chunks in parallel (limit concurrency to avoid rate limits)
-    semaphore = asyncio.Semaphore(3)
+    semaphore = asyncio.Semaphore(config.concurrent_doc_intel_calls)
 
     async def process_form(
         form_num: int,
@@ -226,8 +319,17 @@ async def process_pdf_internal(
                         "totalForms": total_forms,
                         "pageRange": f"{start_page}-{end_page}",
                         "originalPageCount": page_count,
+                        "profileName": profile_name,
+                        "pagesPerForm": pages_per_form,
+                        "idempotencyKey": idempotency_key,
+                        "contentHash": content_hash,
+                        "processingVersion": PROCESSING_VERSION,
                         **analysis_result,
                     }
+
+                    # Add tenant ID if multi-tenant is enabled
+                    if resolved_tenant_id:
+                        document["tenantId"] = resolved_tenant_id
 
                     await cosmos_service.save_document_result(document)
 
@@ -305,9 +407,23 @@ async def process_document(req: func.HttpRequest) -> func.HttpResponse:
         {
             "blobUrl": "https://storage.blob.core.windows.net/container/file.pdf",
             "blobName": "folder/file.pdf",
-            "modelId": "custom-model-v1",  // optional
-            "webhookUrl": "https://example.com/webhook"  // optional
+            "modelId": "custom-model-v1",  // optional, overridden by profile
+            "profile": "invoice",  // optional, uses predefined profile settings
+            "pagesPerForm": 2,  // optional, override pages per form
+            "autoDetect": false,  // optional, enable smart form boundary detection
+            "webhookUrl": "https://example.com/webhook",  // optional
+            "tenantId": "tenant-123"  // optional, for multi-tenant isolation
         }
+
+    Profiles provide preconfigured settings for common document types:
+    - invoice, receipt, w2, id-document, business-card, contract, etc.
+    Use GET /api/profiles to list available profiles.
+
+    Smart form detection (autoDetect=true):
+    - Automatically detects form boundaries using page analysis
+    - Uses page numbering patterns (e.g., "Page 1 of 2")
+    - Compares header similarity between pages
+    - Falls back to fixed pagesPerForm if no boundaries detected
     """
     logger.info("ProcessDocument HTTP trigger invoked")
 
@@ -326,8 +442,33 @@ async def process_document(req: func.HttpRequest) -> func.HttpResponse:
 
     try:
         config = get_config()
-        model_id = req_body.get("modelId", config.default_model_id)
+
+        # Check for profile-based processing
+        profile_name = req_body.get("profile")
+        profile = None
+        if profile_name:
+            profile = get_profile(profile_name)
+            if not profile:
+                return create_error_response(
+                    f"Unknown profile: {profile_name}. Use GET /api/profiles to list available profiles.",
+                    status_code=400,
+                )
+
+        # Determine model_id - profile takes precedence, then request, then config default
+        if profile:
+            model_id = profile.model_id
+            pages_per_form = req_body.get("pagesPerForm") or profile.pages_per_form
+            confidence_threshold = profile.confidence_threshold
+            # Use profile's auto_detect unless explicitly overridden in request
+            auto_detect = req_body.get("autoDetect", profile.auto_detect_forms)
+        else:
+            model_id = req_body.get("modelId", config.default_model_id)
+            pages_per_form = req_body.get("pagesPerForm")
+            confidence_threshold = req_body.get("confidenceThreshold", 0.8)
+            auto_detect = req_body.get("autoDetect", False)
+
         webhook_url = req_body.get("webhookUrl")
+        tenant_id = req_body.get("tenantId")
 
         # Validate model if custom
         doc_service = get_document_service()
@@ -338,7 +479,19 @@ async def process_document(req: func.HttpRequest) -> func.HttpResponse:
             blob_name=blob_name,
             model_id=model_id,
             webhook_url=webhook_url,
+            pages_per_form_override=pages_per_form,
+            confidence_threshold=confidence_threshold,
+            profile_name=profile_name,
+            auto_detect_forms=auto_detect,
+            tenant_id=tenant_id,
         )
+
+        # Add profile info to result
+        if profile_name:
+            result["profile"] = profile_name
+        # Add tenant info if multi-tenant enabled
+        if config.multi_tenant_enabled and tenant_id:
+            result["tenantId"] = tenant_id
 
         return create_response(result, status_code=200)
 
@@ -498,6 +651,7 @@ async def reprocess_document(req: func.HttpRequest) -> func.HttpResponse:
             blob_name=blob_name,
             model_id=model_id,
             webhook_url=webhook_url,
+            skip_idempotency_check=True,  # Skip for reprocessing
         )
 
         result["retryCount"] = retry_count + 1
@@ -624,6 +778,88 @@ async def get_batch_status(req: func.HttpRequest) -> func.HttpResponse:
     except CosmosError as e:
         logger.error(f"Cosmos DB error: {e}")
         return create_error_response(f"Database error: {e.reason}", status_code=500)
+
+    except Exception as e:
+        logger.exception(f"Unexpected error: {e}")
+        return create_error_response("Internal server error", status_code=500)
+
+
+@app.function_name(name="GetTenantDocuments")
+@app.route(route="tenants/{tenant_id}/documents", methods=["GET"])
+async def get_tenant_documents(req: func.HttpRequest) -> func.HttpResponse:
+    """Get all documents for a specific tenant.
+
+    Requires MULTI_TENANT_ENABLED=true in configuration.
+
+    Path parameters:
+        tenant_id: Tenant identifier
+
+    Query parameters:
+        status: Filter by status (completed, failed, pending)
+        limit: Maximum documents to return (default: 100)
+    """
+    logger.info("GetTenantDocuments HTTP trigger invoked")
+
+    try:
+        config = get_config()
+
+        if not config.multi_tenant_enabled:
+            return create_error_response(
+                "Multi-tenant mode is not enabled. Set MULTI_TENANT_ENABLED=true.",
+                status_code=400,
+            )
+
+        tenant_id = req.route_params.get("tenant_id")
+        if not tenant_id:
+            return create_error_response("Missing tenant_id in path", status_code=400)
+
+        status_filter = req.params.get("status")
+        limit = int(req.params.get("limit", "100"))
+
+        cosmos_service = get_cosmos_service()
+        docs = await cosmos_service.query_by_tenant(
+            tenant_id=tenant_id,
+            status=status_filter,
+            limit=limit,
+        )
+
+        # Build document summary list
+        documents = [
+            {
+                "documentId": d.get("id"),
+                "sourceFile": d.get("sourceFile"),
+                "status": d.get("status"),
+                "processedAt": d.get("processedAt"),
+                "formNumber": d.get("formNumber"),
+                "totalForms": d.get("totalForms"),
+                "modelId": d.get("modelId"),
+                "profileName": d.get("profileName"),
+            }
+            for d in docs
+        ]
+
+        # Count by status
+        completed = sum(1 for d in docs if d.get("status") == "completed")
+        failed = sum(1 for d in docs if d.get("status") == "failed")
+        pending = sum(1 for d in docs if d.get("status") in ("pending", "processing"))
+
+        return create_response(
+            {
+                "tenantId": tenant_id,
+                "totalDocuments": len(documents),
+                "completed": completed,
+                "failed": failed,
+                "pending": pending,
+                "documents": documents,
+            }
+        )
+
+    except CosmosError as e:
+        logger.error(f"Cosmos DB error: {e}")
+        return create_error_response(f"Database error: {e.reason}", status_code=500)
+
+    except ValueError:
+        return create_error_response("Invalid limit parameter", status_code=400)
 
     except Exception as e:
         logger.exception(f"Unexpected error: {e}")
@@ -769,6 +1005,82 @@ async def health_check(req: func.HttpRequest) -> func.HttpResponse:
     )
 
 
+@app.function_name(name="ListProfiles")
+@app.route(route="profiles", methods=["GET"])
+async def list_processing_profiles(req: func.HttpRequest) -> func.HttpResponse:
+    """List available processing profiles.
+
+    Returns all built-in and custom profiles with their configurations.
+    Use profile names in POST /api/process requests.
+
+    Query parameters:
+        tag: Filter profiles by tag (e.g., ?tag=financial)
+    """
+    logger.info("ListProfiles HTTP trigger invoked")
+
+    try:
+        profiles = list_profiles()
+
+        # Filter by tag if provided
+        tag_filter = req.params.get("tag")
+        if tag_filter:
+            profiles = [p for p in profiles if tag_filter in p.get("tags", [])]
+
+        return create_response(
+            {
+                "profiles": profiles,
+                "count": len(profiles),
+                "usage": "Use profile name in POST /api/process with 'profile' field",
+            }
+        )
+
+    except Exception as e:
+        logger.exception(f"Error listing profiles: {e}")
+        return create_error_response("Failed to list profiles", status_code=500)
+
+
+@app.function_name(name="GetProfile")
+@app.route(route="profiles/{profile_name}", methods=["GET"])
+async def get_processing_profile(req: func.HttpRequest) -> func.HttpResponse:
+    """Get details for a specific processing profile.
+
+    Path parameters:
+        profile_name: Name of the profile (e.g., invoice, w2, receipt)
+    """
+    logger.info("GetProfile HTTP trigger invoked")
+
+    profile_name = req.route_params.get("profile_name")
+    if not profile_name:
+        return create_error_response("Missing profile_name in path", status_code=400)
+
+    profile = get_profile(profile_name)
+    if not profile:
+        return create_error_response(
+            f"Profile not found: {profile_name}",
+            status_code=404,
+        )
+
+    return create_response(
+        {
+            "name": profile.name,
+            "model_id": profile.model_id,
+            "pages_per_form": profile.pages_per_form,
+            "confidence_threshold": profile.confidence_threshold,
+            "required_fields": profile.required_fields,
+            "description": profile.description,
+            "tags": profile.tags,
+            "validations": [
+                {
+                    "field_name": v.field_name,
+                    "validation_type": v.validation_type,
+                    "params": v.params,
+                }
+                for v in profile.validations
+            ],
+        }
+    )
+
+
 @app.function_name(name="EstimateCost")
 @app.route(route="estimate-cost", methods=["POST"])
 async def estimate_cost(req: func.HttpRequest) -> func.HttpResponse:
@@ -872,7 +1184,8 @@ async def batch_process(req: func.HttpRequest) -> func.HttpResponse:
             ],
             "modelId": "custom-model-v1",
             "webhookUrl": "https://...",
-            "parallel": true
+            "parallel": true,
+            "tenantId": "tenant-123"  // optional, for multi-tenant isolation
         }
     """
     logger.info("BatchProcess HTTP trigger invoked")
@@ -886,17 +1199,22 @@ async def batch_process(req: func.HttpRequest) -> func.HttpResponse:
     if not blobs:
         return create_error_response("No blobs provided", status_code=400)
 
-    if len(blobs) > 50:
+    try:
+        config = get_config()
+    except ConfigurationError as e:
+        return create_error_response(f"Configuration error: {e}", status_code=500)
+
+    if len(blobs) > config.batch_max_blobs:
         return create_error_response(
-            "Maximum 50 blobs per batch request",
+            f"Maximum {config.batch_max_blobs} blobs per batch request",
             status_code=400,
         )
 
     try:
-        config = get_config()
         model_id = req_body.get("modelId", config.default_model_id)
         webhook_url = req_body.get("webhookUrl")
         parallel = req_body.get("parallel", True)
+        tenant_id = req_body.get("tenantId")
 
         # Generate batch ID
         batch_id = f"batch_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}"
@@ -921,6 +1239,7 @@ async def batch_process(req: func.HttpRequest) -> func.HttpResponse:
                     blob_name=blob_name,
                     model_id=model_id,
                     webhook_url=None,  # Webhook at batch level only
+                    tenant_id=tenant_id,
                 )
                 return {
                     "blobName": blob_name,
@@ -1149,6 +1468,331 @@ async def process_multi_model(req: func.HttpRequest) -> func.HttpResponse:
     except Exception as e:
         logger.exception(f"Multi-model processing error: {e}")
         return create_error_response(f"Multi-model processing failed: {e}", status_code=500)
+
+
+# ============================================================================
+# Async Job Processing (Queue-Based)
+# ============================================================================
+
+
+@app.function_name(name="SubmitJob")
+@app.route(route="jobs", methods=["POST"])
+async def submit_job(req: func.HttpRequest) -> func.HttpResponse:
+    """Submit a document for async processing.
+
+    Returns immediately with a job_id. Use GET /api/jobs/{job_id} to poll status.
+
+    Request body:
+        {
+            "blobUrl": "https://storage.blob.core.windows.net/container/file.pdf",
+            "blobName": "folder/file.pdf",
+            "modelId": "custom-model-v1",  // optional
+            "profile": "invoice",  // optional
+            "pagesPerForm": 2,  // optional
+            "webhookUrl": "https://example.com/webhook",  // optional
+            "tenantId": "tenant-123"  // optional, for multi-tenant isolation
+        }
+
+    Returns:
+        {
+            "jobId": "job_abc123",
+            "status": "queued",
+            "statusUrl": "/api/jobs/job_abc123"
+        }
+    """
+    logger.info("SubmitJob HTTP trigger invoked")
+
+    try:
+        req_body = req.get_json()
+    except ValueError:
+        return create_error_response("Invalid JSON in request body", status_code=400)
+
+    blob_url = req_body.get("blobUrl")
+    blob_name = req_body.get("blobName")
+
+    if not blob_url:
+        return create_error_response("Missing required field: blobUrl", status_code=400)
+    if not blob_name:
+        return create_error_response("Missing required field: blobName", status_code=400)
+
+    try:
+        config = get_config()
+        job_service = get_job_service()
+
+        if not job_service:
+            return create_error_response(
+                "Job service not configured. Use POST /api/process for synchronous processing.",
+                status_code=503,
+            )
+
+        # Get profile settings if specified
+        profile_name = req_body.get("profile")
+        profile = None
+        if profile_name:
+            profile = get_profile(profile_name)
+            if not profile:
+                return create_error_response(
+                    f"Unknown profile: {profile_name}",
+                    status_code=400,
+                )
+
+        # Determine model and settings
+        if profile:
+            model_id = profile.model_id
+            pages_per_form = req_body.get("pagesPerForm") or profile.pages_per_form
+        else:
+            model_id = req_body.get("modelId", config.default_model_id)
+            pages_per_form = req_body.get("pagesPerForm")
+
+        webhook_url = req_body.get("webhookUrl")
+        tenant_id = req_body.get("tenantId")
+
+        # Create and queue job
+        job = await job_service.create_job(
+            blob_url=blob_url,
+            blob_name=blob_name,
+            model_id=model_id,
+            profile_name=profile_name,
+            pages_per_form=pages_per_form,
+            webhook_url=webhook_url,
+            tenant_id=tenant_id,
+        )
+
+        # Queue for background processing
+        queued = await job_service.queue_job(job)
+
+        if not queued:
+            # Fall back to direct processing if queue unavailable
+            logger.warning(f"Queue unavailable for job {job.job_id}, processing synchronously")
+            try:
+                result = await process_pdf_internal(
+                    blob_url=blob_url,
+                    blob_name=blob_name,
+                    model_id=model_id,
+                    webhook_url=webhook_url,
+                    pages_per_form_override=pages_per_form,
+                    profile_name=profile_name,
+                    tenant_id=tenant_id,
+                )
+                await job_service.complete_job(job.job_id, result, JobStatus.COMPLETED)
+                return create_response(
+                    {
+                        "jobId": job.job_id,
+                        "status": "completed",
+                        "statusUrl": f"/api/jobs/{job.job_id}",
+                        "result": result,
+                        "note": "Processed synchronously (queue unavailable)",
+                    }
+                )
+            except Exception as e:
+                await job_service.fail_job(job.job_id, str(e))
+                return create_error_response(
+                    f"Processing failed: {e}",
+                    status_code=500,
+                    details={"jobId": job.job_id},
+                )
+
+        return create_response(
+            {
+                "jobId": job.job_id,
+                "status": "queued",
+                "statusUrl": f"/api/jobs/{job.job_id}",
+                "message": "Job queued for processing. Poll statusUrl for progress.",
+            },
+            status_code=202,
+        )
+
+    except ConfigurationError as e:
+        return create_error_response(f"Configuration error: {e}", status_code=500)
+    except Exception as e:
+        logger.exception(f"Submit job error: {e}")
+        return create_error_response(f"Failed to submit job: {e}", status_code=500)
+
+
+@app.function_name(name="GetJobStatus")
+@app.route(route="jobs/{job_id}", methods=["GET"])
+async def get_job_status(req: func.HttpRequest) -> func.HttpResponse:
+    """Get status of a processing job.
+
+    Path parameters:
+        job_id: Job ID returned from POST /api/jobs
+
+    Returns job status, progress, and result when complete.
+    """
+    logger.info("GetJobStatus HTTP trigger invoked")
+
+    job_id = req.route_params.get("job_id")
+    if not job_id:
+        return create_error_response("Missing job_id in path", status_code=400)
+
+    try:
+        job_service = get_job_service()
+        if not job_service:
+            return create_error_response("Job service not configured", status_code=503)
+
+        job = await job_service.get_job(job_id)
+        if not job:
+            return create_error_response(f"Job not found: {job_id}", status_code=404)
+
+        response_data = {
+            "jobId": job.job_id,
+            "status": job.status.value,
+            "blobName": job.blob_name,
+            "modelId": job.model_id,
+            "profileName": job.profile_name,
+            "createdAt": job.created_at,
+            "updatedAt": job.updated_at,
+        }
+
+        # Add timing info
+        if job.started_at:
+            response_data["startedAt"] = job.started_at
+        if job.completed_at:
+            response_data["completedAt"] = job.completed_at
+
+        # Add progress for running jobs
+        if job.progress:
+            response_data["progress"] = job.progress
+
+        # Add result for completed jobs
+        if job.status == JobStatus.COMPLETED and job.result:
+            response_data["result"] = job.result
+        elif job.status == JobStatus.PARTIAL and job.result:
+            response_data["result"] = job.result
+        elif job.status == JobStatus.FAILED:
+            response_data["error"] = job.error
+            response_data["retryCount"] = job.retry_count
+
+        return create_response(response_data)
+
+    except Exception as e:
+        logger.exception(f"Get job status error: {e}")
+        return create_error_response(f"Failed to get job status: {e}", status_code=500)
+
+
+@app.function_name(name="ListJobs")
+@app.route(route="jobs", methods=["GET"])
+async def list_jobs(req: func.HttpRequest) -> func.HttpResponse:
+    """List processing jobs.
+
+    Query parameters:
+        status: Filter by status (pending, queued, processing, completed, failed)
+        limit: Maximum jobs to return (default: 50)
+    """
+    logger.info("ListJobs HTTP trigger invoked")
+
+    try:
+        job_service = get_job_service()
+        if not job_service:
+            return create_error_response("Job service not configured", status_code=503)
+
+        # Parse filters
+        status_filter = req.params.get("status")
+        status = JobStatus(status_filter) if status_filter else None
+        limit = int(req.params.get("limit", "50"))
+
+        jobs = await job_service.list_jobs(status=status, limit=limit)
+
+        return create_response(
+            {
+                "jobs": [
+                    {
+                        "jobId": job.job_id,
+                        "status": job.status.value,
+                        "blobName": job.blob_name,
+                        "createdAt": job.created_at,
+                        "profileName": job.profile_name,
+                    }
+                    for job in jobs
+                ],
+                "count": len(jobs),
+            }
+        )
+
+    except ValueError:
+        return create_error_response("Invalid status filter", status_code=400)
+    except Exception as e:
+        logger.exception(f"List jobs error: {e}")
+        return create_error_response(f"Failed to list jobs: {e}", status_code=500)
+
+
+# ============================================================================
+# Queue Trigger for Background Processing
+# ============================================================================
+
+
+@app.function_name(name="ProcessJobQueue")
+@app.queue_trigger(
+    arg_name="msg",
+    queue_name="document-processing",
+    connection="AzureWebJobsStorage",
+)
+async def process_job_queue(msg: func.QueueMessage) -> None:
+    """Process jobs from the queue.
+
+    Triggered when messages are added to document-processing queue.
+    """
+    logger.info("ProcessJobQueue trigger invoked")
+
+    try:
+        # Parse message
+        message_content = msg.get_body().decode("utf-8")
+        job_data = json.loads(message_content)
+
+        job_id = job_data.get("jobId")
+        if not job_id:
+            logger.error("Queue message missing jobId")
+            return
+
+        job_service = get_job_service()
+        if not job_service:
+            logger.error("Job service not configured")
+            return
+
+        # Mark job as processing
+        job = await job_service.start_job(job_id)
+        if not job:
+            logger.error(f"Job not found: {job_id}")
+            return
+
+        logger.info(f"Processing job {job_id}: {job.blob_name}")
+
+        try:
+            # Process the document
+            result = await process_pdf_internal(
+                blob_url=job.blob_url,
+                blob_name=job.blob_name,
+                model_id=job.model_id,
+                webhook_url=job.webhook_url,
+                pages_per_form_override=job.pages_per_form,
+                profile_name=job.profile_name,
+                tenant_id=job.tenant_id,
+            )
+
+            # Determine final status
+            status = JobStatus.COMPLETED
+            if result.get("status") == "partial":
+                status = JobStatus.PARTIAL
+
+            await job_service.complete_job(job_id, result, status)
+            logger.info(f"Job {job_id} completed with status {status.value}")
+
+        except Exception as e:
+            logger.error(f"Job {job_id} failed: {e}")
+            await job_service.fail_job(job_id, str(e))
+
+            # Check if we should retry
+            updated_job = await job_service.get_job(job_id)
+            if updated_job and updated_job.retry_count < updated_job.max_retries:
+                logger.info(f"Job {job_id} will be retried (attempt {updated_job.retry_count + 1})")
+                # Re-queue by raising exception (Azure will retry)
+                raise
+
+    except json.JSONDecodeError as e:
+        logger.error(f"Invalid queue message format: {e}")
+    except Exception as e:
+        logger.exception(f"Queue processing error: {e}")
+        raise  # Re-raise to trigger Azure retry
 
 
 # ============================================================================

@@ -14,6 +14,7 @@ dependencies = [
     "azure-functions>=1.21.0",
     "azure-identity[aio]>=1.19.0",
     "azure-storage-blob>=12.19.0",
+    "azure-storage-queue>=12.9.0",
     "azure-keyvault-secrets>=4.8.0",
     "aiohttp>=3.10.0",
     "pydantic>=2.0.0",

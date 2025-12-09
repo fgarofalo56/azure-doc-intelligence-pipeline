@@ -46,6 +46,19 @@ class Config:
     dead_letter_container: str
     max_retry_attempts: int
 
+    # PDF splitting settings
+    pages_per_form: int  # Number of pages per form for PDF splitting
+
+    # Concurrency and retry settings
+    concurrent_doc_intel_calls: int  # Max concurrent Document Intelligence API calls
+    doc_intel_max_retries: int  # Max retries for Document Intelligence API
+    retry_initial_delay: float  # Initial delay for exponential backoff (seconds)
+    batch_max_blobs: int  # Max blobs per batch request
+
+    # Multi-tenant settings
+    multi_tenant_enabled: bool  # Enable tenant isolation
+    default_tenant_id: str  # Default tenant ID when not specified
+
     @classmethod
     def from_environment(cls) -> "Config":
         """Load configuration from environment variables.
@@ -93,6 +106,16 @@ class Config:
             webhook_url=os.getenv("WEBHOOK_URL"),
             dead_letter_container=os.getenv("DEAD_LETTER_CONTAINER", "_dead_letter"),
             max_retry_attempts=int(os.getenv("MAX_RETRY_ATTEMPTS", "3")),
+            # PDF splitting settings
+            pages_per_form=int(os.getenv("PAGES_PER_FORM", "2")),
+            # Concurrency and retry settings
+            concurrent_doc_intel_calls=int(os.getenv("CONCURRENT_DOC_INTEL_CALLS", "3")),
+            doc_intel_max_retries=int(os.getenv("DOC_INTEL_MAX_RETRIES", "5")),
+            retry_initial_delay=float(os.getenv("RETRY_INITIAL_DELAY", "2.0")),
+            batch_max_blobs=int(os.getenv("BATCH_MAX_BLOBS", "50")),
+            # Multi-tenant settings
+            multi_tenant_enabled=os.getenv("MULTI_TENANT_ENABLED", "false").lower() == "true",
+            default_tenant_id=os.getenv("DEFAULT_TENANT_ID", "default"),
         )
 
 

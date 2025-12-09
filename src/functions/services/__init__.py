@@ -13,7 +13,30 @@ from .logging_service import (
     configure_json_logging,
     get_structured_logger,
 )
-from .pdf_service import PdfService
+from .idempotency import (
+    PROCESSING_VERSION,
+    IdempotencyResult,
+    check_and_generate_idempotency,
+    check_idempotency,
+    create_idempotent_document,
+    generate_content_hash,
+    generate_idempotency_key,
+)
+from .job_service import (
+    JobService,
+    JobStatus,
+    ProcessingJob,
+    get_job_service,
+    reset_job_service,
+)
+from .pdf_service import FormBoundary, PdfService, PdfSplitError
+from .profiles import (
+    FieldValidation,
+    ProcessingProfile,
+    create_profile_from_request,
+    get_profile,
+    list_profiles,
+)
 from .rate_limiter import RateLimitConfig, RateLimiter, get_rate_limiter
 from .telemetry_service import TelemetryService, get_telemetry_service
 from .webhook_service import WebhookService, get_webhook_service
@@ -40,6 +63,8 @@ def get_document_service() -> DocumentService:
             endpoint=config.doc_intel_endpoint,
             api_key=config.doc_intel_api_key,
             max_concurrent=config.max_concurrent_requests,
+            max_retries=config.doc_intel_max_retries,
+            initial_retry_delay=config.retry_initial_delay,
         )
     return _document_service
 
@@ -114,20 +139,39 @@ __all__ = [
     "CosmosService",
     "BlobService",
     "PdfService",
+    "PdfSplitError",
+    "FormBoundary",
     "TelemetryService",
     "WebhookService",
+    "JobService",
+    "JobStatus",
+    "ProcessingJob",
     "JsonFormatter",
     "StructuredLogger",
     "RateLimitConfig",
     "RateLimiter",
+    "ProcessingProfile",
+    "FieldValidation",
+    "IdempotencyResult",
+    "PROCESSING_VERSION",
     "get_document_service",
     "get_cosmos_service",
     "get_blob_service",
     "get_pdf_service",
     "get_telemetry_service",
     "get_webhook_service",
+    "get_job_service",
     "get_structured_logger",
     "configure_json_logging",
     "get_rate_limiter",
+    "get_profile",
+    "list_profiles",
+    "create_profile_from_request",
+    "generate_idempotency_key",
+    "generate_content_hash",
+    "check_idempotency",
+    "check_and_generate_idempotency",
+    "create_idempotent_document",
     "reset_services",
+    "reset_job_service",
 ]
