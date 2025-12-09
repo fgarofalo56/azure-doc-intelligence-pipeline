@@ -960,7 +960,7 @@ async def batch_process(req: func.HttpRequest) -> func.HttpResponse:
                 status=overall_status,
                 forms_processed=processed,
                 total_forms=len(blobs),
-                document_ids=[r.get("documentId") for r in results if r.get("documentId")],
+                document_ids=[str(r.get("documentId")) for r in results if r.get("documentId")],
                 webhook_url=webhook_url,
             )
 

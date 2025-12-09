@@ -312,7 +312,7 @@ class CosmosService:
         if not doc:
             raise CosmosError("increment_retry", f"Document {doc_id} not found")
 
-        retry_count = doc.get("retryCount", 0) + 1
+        retry_count: int = int(doc.get("retryCount", 0)) + 1
         doc["retryCount"] = retry_count
         doc["status"] = "pending"  # Reset status for retry
 
