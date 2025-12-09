@@ -198,6 +198,26 @@ class TestWebhookService:
             assert result is False
 
     @pytest.mark.asyncio
+    async def test_send_notification_unexpected_error(self):
+        """Test notification handles unexpected exceptions."""
+        from src.functions.services.webhook_service import WebhookService
+
+        service = WebhookService(default_webhook_url="https://example.com/webhook")
+
+        with patch("httpx.AsyncClient") as mock_client:
+            mock_instance = AsyncMock()
+            # Raise a generic exception (not httpx.TimeoutException or httpx.RequestError)
+            mock_instance.post.side_effect = RuntimeError("Unexpected error")
+            mock_instance.__aenter__.return_value = mock_instance
+            mock_instance.__aexit__.return_value = None
+            mock_client.return_value = mock_instance
+
+            with patch("asyncio.sleep", new_callable=AsyncMock):
+                result = await service.send_notification({"event": "test"})
+
+            assert result is False
+
+    @pytest.mark.asyncio
     async def test_notify_processing_complete(self):
         """Test notify_processing_complete builds correct payload."""
         from src.functions.services.webhook_service import WebhookService

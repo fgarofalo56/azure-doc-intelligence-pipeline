@@ -107,6 +107,18 @@ class TestBlobService:
 
         assert "Invalid blob URL" in str(exc.value)
 
+    def test_parse_blob_url_generic_error(self, blob_service):
+        """Test parse_blob_url handles generic exceptions."""
+        from src.functions.services.blob_service import BlobServiceError
+
+        with patch("src.functions.services.blob_service.urlparse") as mock_urlparse:
+            mock_urlparse.side_effect = RuntimeError("Parse error")
+
+            with pytest.raises(BlobServiceError) as exc:
+                blob_service.parse_blob_url("https://test.blob.core.windows.net/c/b")
+
+            assert "Failed to parse blob URL" in str(exc.value)
+
     def test_generate_sas_url(self, blob_service):
         """Test SAS URL generation."""
         with patch(
@@ -119,6 +131,34 @@ class TestBlobService:
 
             assert sas_url == f"{url}?sv=2021&sig=xxx"
             mock_gen_sas.assert_called_once()
+
+    def test_generate_sas_url_invalid_path(self, blob_service):
+        """Test SAS URL generation with invalid path (no blob name)."""
+        from src.functions.services.blob_service import BlobServiceError
+
+        # URL with container only, no blob path
+        url = "https://teststorage.blob.core.windows.net/container"
+
+        with pytest.raises(BlobServiceError) as exc:
+            blob_service.generate_sas_url(url)
+
+        assert "Invalid blob URL" in str(exc.value)
+
+    def test_generate_sas_url_generic_error(self, blob_service):
+        """Test SAS URL generation handles generic exceptions."""
+        from src.functions.services.blob_service import BlobServiceError
+
+        with patch(
+            "src.functions.services.blob_service.generate_blob_sas"
+        ) as mock_gen_sas:
+            mock_gen_sas.side_effect = RuntimeError("Unexpected error")
+
+            url = "https://teststorage.blob.core.windows.net/pdfs/test.pdf"
+
+            with pytest.raises(BlobServiceError) as exc:
+                blob_service.generate_sas_url(url)
+
+            assert "SAS token generation failed" in str(exc.value)
 
     def test_download_blob(self, connection_string):
         """Test downloading a blob."""
@@ -378,6 +418,44 @@ class TestBlobService:
             assert result == mock_dest_blob.url
             mock_dest_blob.start_copy_from_url.assert_called_once_with(mock_source_blob.url)
             mock_source_blob.delete_blob.assert_called_once()
+
+    def test_move_blob_container_exists(self, connection_string):
+        """Test moving a blob when destination container already exists."""
+        from src.functions.services.blob_service import BlobService
+
+        with patch(
+            "src.functions.services.blob_service.BlobServiceClient.from_connection_string"
+        ) as mock_from_conn:
+            mock_source_blob = MagicMock()
+            mock_source_blob.url = "https://source.blob.core.windows.net/src/test.pdf"
+
+            mock_dest_blob = MagicMock()
+            mock_dest_blob.url = "https://dest.blob.core.windows.net/dest/test.pdf"
+
+            mock_source_container = MagicMock()
+            mock_source_container.get_blob_client.return_value = mock_source_blob
+
+            mock_dest_container = MagicMock()
+            mock_dest_container.get_blob_client.return_value = mock_dest_blob
+            # Simulate container already exists error
+            mock_dest_container.create_container.side_effect = Exception("Container already exists")
+
+            mock_client = MagicMock()
+
+            def get_container(name):
+                if name == "src":
+                    return mock_source_container
+                return mock_dest_container
+
+            mock_client.get_container_client.side_effect = get_container
+            mock_from_conn.return_value = mock_client
+
+            service = BlobService(connection_string)
+            # Should succeed despite create_container error
+            result = service.move_blob("src", "test.pdf", "dest")
+
+            assert result == mock_dest_blob.url
+            mock_dest_blob.start_copy_from_url.assert_called_once()
 
     def test_move_blob_error(self, connection_string):
         """Test error when move fails."""
