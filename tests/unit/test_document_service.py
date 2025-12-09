@@ -94,9 +94,7 @@ class TestDocumentService:
 
         mock_client = AsyncMock()
         # First call fails with 429, second succeeds
-        mock_client.begin_analyze_document = AsyncMock(
-            side_effect=[rate_limit_error, mock_poller]
-        )
+        mock_client.begin_analyze_document = AsyncMock(side_effect=[rate_limit_error, mock_poller])
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock()
 
@@ -230,10 +228,7 @@ class TestDocumentService:
             return_value=mock_client,
         ):
             # Start 3 concurrent tasks - only 2 should run at a time
-            tasks = [
-                service.analyze_document(f"url{i}", "model", f"file{i}")
-                for i in range(3)
-            ]
+            tasks = [service.analyze_document(f"url{i}", "model", f"file{i}") for i in range(3)]
             await asyncio.gather(*tasks)
 
         # With semaphore(2), pattern should show interleaved execution

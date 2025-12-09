@@ -6,7 +6,8 @@ Provides decorators for Azure Functions HTTP triggers.
 import functools
 import json
 import logging
-from typing import Any, Callable, Type, TypeVar
+from collections.abc import Callable
+from typing import Any, TypeVar
 
 import azure.functions as func
 from pydantic import BaseModel, ValidationError
@@ -19,7 +20,7 @@ T = TypeVar("T", bound=BaseModel)
 
 
 def validate_request(
-    model: Type[T],
+    model: type[T],
     source: str = "body",
 ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     """Decorator to validate request body against Pydantic model.
@@ -64,11 +65,13 @@ def validate_request(
                 errors = []
                 for error in e.errors():
                     field = ".".join(str(loc) for loc in error["loc"])
-                    errors.append({
-                        "field": field,
-                        "message": error["msg"],
-                        "type": error["type"],
-                    })
+                    errors.append(
+                        {
+                            "field": field,
+                            "message": error["msg"],
+                            "type": error["type"],
+                        }
+                    )
 
                 return _error_response(
                     "Validation failed",
@@ -125,11 +128,13 @@ def rate_limit(
 
             if not allowed:
                 return func.HttpResponse(
-                    body=json.dumps({
-                        "status": "error",
-                        "error": "Rate limit exceeded",
-                        "retry_after": headers.get("Retry-After", "60"),
-                    }),
+                    body=json.dumps(
+                        {
+                            "status": "error",
+                            "error": "Rate limit exceeded",
+                            "retry_after": headers.get("Retry-After", "60"),
+                        }
+                    ),
                     status_code=429,
                     mimetype="application/json",
                     headers=headers,

@@ -38,9 +38,7 @@ class BlobService:
     def client(self) -> BlobServiceClient:
         """Lazy initialization of BlobServiceClient."""
         if self._client is None:
-            self._client = BlobServiceClient.from_connection_string(
-                self.connection_string
-            )
+            self._client = BlobServiceClient.from_connection_string(self.connection_string)
         return self._client
 
     def generate_sas_url(self, blob_url: str) -> str:
@@ -98,8 +96,7 @@ class BlobService:
                 blob_name=blob_name,
                 account_key=account_key,
                 permission=BlobSasPermissions(read=True),
-                expiry=datetime.now(timezone.utc)
-                + timedelta(hours=self.sas_expiry_hours),
+                expiry=datetime.now(timezone.utc) + timedelta(hours=self.sas_expiry_hours),
             )
 
             # Construct SAS URL
@@ -335,7 +332,9 @@ class BlobService:
             # Delete source
             source_blob_client.delete_blob()
 
-            logger.info(f"Moved blob from {source_container}/{source_blob} to {dest_container}/{dest_blob}")
+            logger.info(
+                f"Moved blob from {source_container}/{source_blob} to {dest_container}/{dest_blob}"
+            )
             return dest_blob_client.url
 
         except Exception as e:

@@ -77,7 +77,7 @@ class WebhookService:
             return False
 
         attempts = MAX_RETRIES if retry else 1
-        last_error: Exception | None = None
+        _last_error: Exception | None = None  # Track error for potential future use
 
         for attempt in range(1, attempts + 1):
             try:
@@ -102,27 +102,23 @@ class WebhookService:
                         f"Webhook returned non-success status: {response.status_code} "
                         f"(attempt {attempt}/{attempts})"
                     )
-                    last_error = WebhookError(
+                    _last_error = WebhookError(
                         url=url,
                         reason=f"HTTP {response.status_code}",
                         status_code=response.status_code,
                     )
 
             except httpx.TimeoutException as e:
-                logger.warning(
-                    f"Webhook timeout (attempt {attempt}/{attempts}): {e}"
-                )
-                last_error = WebhookError(url=url, reason="Request timeout")
+                logger.warning(f"Webhook timeout (attempt {attempt}/{attempts}): {e}")
+                _last_error = WebhookError(url=url, reason="Request timeout")
 
             except httpx.RequestError as e:
-                logger.warning(
-                    f"Webhook request failed (attempt {attempt}/{attempts}): {e}"
-                )
-                last_error = WebhookError(url=url, reason=str(e))
+                logger.warning(f"Webhook request failed (attempt {attempt}/{attempts}): {e}")
+                _last_error = WebhookError(url=url, reason=str(e))
 
             except Exception as e:
                 logger.error(f"Unexpected webhook error: {e}")
-                last_error = WebhookError(url=url, reason=str(e))
+                _last_error = WebhookError(url=url, reason=str(e))
 
             # Wait before retry
             if attempt < attempts:

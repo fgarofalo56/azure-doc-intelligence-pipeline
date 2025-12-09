@@ -531,14 +531,16 @@ async def get_document_status(req: func.HttpRequest) -> func.HttpResponse:
         doc = await cosmos_service.get_document(doc_id, blob_name)
 
         if doc:
-            return create_response({
-                "status": doc.get("status", "unknown"),
-                "documentId": doc_id,
-                "sourceFile": blob_name,
-                "processedAt": doc.get("processedAt"),
-                "formNumber": doc.get("formNumber"),
-                "totalForms": doc.get("totalForms"),
-            })
+            return create_response(
+                {
+                    "status": doc.get("status", "unknown"),
+                    "documentId": doc_id,
+                    "sourceFile": blob_name,
+                    "processedAt": doc.get("processedAt"),
+                    "formNumber": doc.get("formNumber"),
+                    "totalForms": doc.get("totalForms"),
+                }
+            )
         else:
             return create_response(
                 {
@@ -608,14 +610,16 @@ async def get_batch_status(req: func.HttpRequest) -> func.HttpResponse:
             for d in docs
         ]
 
-        return create_response({
-            "sourceFile": blob_name,
-            "totalForms": total_forms,
-            "completed": completed,
-            "failed": failed,
-            "pending": pending,
-            "documents": documents,
-        })
+        return create_response(
+            {
+                "sourceFile": blob_name,
+                "totalForms": total_forms,
+                "completed": completed,
+                "failed": failed,
+                "pending": pending,
+                "documents": documents,
+            }
+        )
 
     except CosmosError as e:
         logger.error(f"Cosmos DB error: {e}")
@@ -690,12 +694,14 @@ async def delete_document(req: func.HttpRequest) -> func.HttpResponse:
             except BlobServiceError as e:
                 errors.append(f"Failed to delete original: {e.reason}")
 
-        return create_response({
-            "status": "success" if not errors else "partial",
-            "deletedDocuments": deleted_docs,
-            "deletedBlobs": deleted_blobs,
-            "errors": errors,
-        })
+        return create_response(
+            {
+                "status": "success" if not errors else "partial",
+                "deletedDocuments": deleted_docs,
+                "deletedBlobs": deleted_blobs,
+                "errors": errors,
+            }
+        )
 
     except CosmosError as e:
         logger.error(f"Cosmos DB error: {e}")
@@ -748,17 +754,19 @@ async def health_check(req: func.HttpRequest) -> func.HttpResponse:
     except Exception:
         services["config"] = "unhealthy"
 
-    overall_status = "healthy" if all(
-        s in ("healthy", "configured") for s in services.values()
-    ) else "degraded"
+    overall_status = (
+        "healthy" if all(s in ("healthy", "configured") for s in services.values()) else "degraded"
+    )
 
-    return create_response({
-        "status": overall_status,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "version": "2.0.0",
-        "services": services,
-        "blobTrigger": blob_trigger_status,
-    })
+    return create_response(
+        {
+            "status": overall_status,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "version": "2.0.0",
+            "services": services,
+            "blobTrigger": blob_trigger_status,
+        }
+    )
 
 
 @app.function_name(name="EstimateCost")
@@ -823,26 +831,28 @@ async def estimate_cost(req: func.HttpRequest) -> func.HttpResponse:
         total_cost = read_cost + analysis_cost
 
         notes = [
-            f"Pricing based on Azure Document Intelligence standard tier",
-            f"Prebuilt models: $1.00/1000 pages, Custom models: $10.00/1000 pages",
-            f"Page splitting uses Read model ($1.00/1000 pages)",
+            "Pricing based on Azure Document Intelligence standard tier",
+            "Prebuilt models: $1.00/1000 pages, Custom models: $10.00/1000 pages",
+            "Page splitting uses Read model ($1.00/1000 pages)",
         ]
 
         if page_count > 50:
             notes.append("Consider batch processing for volumes over 50 pages")
 
-        return create_response({
-            "pageCount": page_count,
-            "formsCount": forms_count,
-            "modelType": model_type,
-            "pricing": {
-                "readCostPerPage": 0.001,
-                "analysisCostPerPage": price_per_page,
-                "currency": "USD",
-            },
-            "estimatedCostUsd": round(total_cost, 4),
-            "notes": notes,
-        })
+        return create_response(
+            {
+                "pageCount": page_count,
+                "formsCount": forms_count,
+                "modelType": model_type,
+                "pricing": {
+                    "readCostPerPage": 0.001,
+                    "analysisCostPerPage": price_per_page,
+                    "currency": "USD",
+                },
+                "estimatedCostUsd": round(total_cost, 4),
+                "notes": notes,
+            }
+        )
 
     except Exception as e:
         logger.exception(f"Cost estimation error: {e}")
@@ -954,14 +964,16 @@ async def batch_process(req: func.HttpRequest) -> func.HttpResponse:
                 webhook_url=webhook_url,
             )
 
-        return create_response({
-            "status": overall_status,
-            "batchId": batch_id,
-            "totalBlobs": len(blobs),
-            "processed": processed,
-            "failed": failed,
-            "results": results,
-        })
+        return create_response(
+            {
+                "status": overall_status,
+                "batchId": batch_id,
+                "totalBlobs": len(blobs),
+                "processed": processed,
+                "failed": failed,
+                "results": results,
+            }
+        )
 
     except Exception as e:
         logger.exception(f"Batch processing error: {e}")
@@ -1039,12 +1051,14 @@ async def process_multi_model(req: func.HttpRequest) -> func.HttpResponse:
                 end_page = int(parts[1]) if len(parts) > 1 else start_page
 
                 if start_page < 1 or end_page > page_count:
-                    results.append({
-                        "pageRange": page_range,
-                        "modelId": model_id,
-                        "status": "failed",
-                        "error": f"Page range {page_range} out of bounds (document has {page_count} pages)",
-                    })
+                    results.append(
+                        {
+                            "pageRange": page_range,
+                            "modelId": model_id,
+                            "status": "failed",
+                            "error": f"Page range {page_range} out of bounds (document has {page_count} pages)",
+                        }
+                    )
                     continue
 
                 # Extract pages for this range
@@ -1068,7 +1082,9 @@ async def process_multi_model(req: func.HttpRequest) -> func.HttpResponse:
                 )
 
                 # Save to Cosmos DB
-                doc_id = f"{blob_name.replace('/', '_').replace('.', '_')}_pages{start_page}-{end_page}"
+                doc_id = (
+                    f"{blob_name.replace('/', '_').replace('.', '_')}_pages{start_page}-{end_page}"
+                )
                 document = {
                     "id": doc_id,
                     "sourceFile": blob_name,
@@ -1082,26 +1098,30 @@ async def process_multi_model(req: func.HttpRequest) -> func.HttpResponse:
                 await cosmos_service.save_document_result(document)
                 document_ids.append(doc_id)
 
-                results.append({
-                    "pageRange": page_range,
-                    "modelId": model_id,
-                    "documentId": doc_id,
-                    "status": "success",
-                })
+                results.append(
+                    {
+                        "pageRange": page_range,
+                        "modelId": model_id,
+                        "documentId": doc_id,
+                        "status": "success",
+                    }
+                )
 
             except Exception as e:
                 logger.error(f"Failed to process pages {page_range}: {e}")
-                results.append({
-                    "pageRange": page_range,
-                    "modelId": model_id,
-                    "status": "failed",
-                    "error": str(e),
-                })
+                results.append(
+                    {
+                        "pageRange": page_range,
+                        "modelId": model_id,
+                        "status": "failed",
+                        "error": str(e),
+                    }
+                )
 
         # Calculate status
         successful = sum(1 for r in results if r.get("status") == "success")
-        status = "success" if successful == len(results) else (
-            "partial" if successful > 0 else "failed"
+        status = (
+            "success" if successful == len(results) else ("partial" if successful > 0 else "failed")
         )
 
         # Send webhook notification
@@ -1115,14 +1135,16 @@ async def process_multi_model(req: func.HttpRequest) -> func.HttpResponse:
                 webhook_url=webhook_url,
             )
 
-        return create_response({
-            "status": status,
-            "processedAt": processed_at,
-            "pageCount": page_count,
-            "rangesProcessed": successful,
-            "totalRanges": len(results),
-            "results": results,
-        })
+        return create_response(
+            {
+                "status": status,
+                "processedAt": processed_at,
+                "pageCount": page_count,
+                "rangesProcessed": successful,
+                "totalRanges": len(results),
+                "results": results,
+            }
+        )
 
     except Exception as e:
         logger.exception(f"Multi-model processing error: {e}")
@@ -1159,7 +1181,7 @@ async def process_blob_trigger(blob: func.InputStream) -> None:
         config = get_config()
         blob_service = get_blob_service()
         telemetry = get_telemetry_service()
-        webhook_service = get_webhook_service()
+        _webhook_service = get_webhook_service()  # Reserved for future webhook handling
 
         if not blob_service:
             logger.error("Storage connection not configured for blob trigger")
@@ -1198,15 +1220,17 @@ async def process_blob_trigger(blob: func.InputStream) -> None:
             # Save error document
             cosmos_service = get_cosmos_service()
             doc_id = blob_name.replace("/", "_").replace(".", "_")
-            await cosmos_service.save_document_result({
-                "id": doc_id,
-                "sourceFile": blob_name,
-                "processedAt": datetime.now(timezone.utc).isoformat(),
-                "status": "failed",
-                "error": str(e),
-                "fields": {},
-                "confidence": {},
-            })
+            await cosmos_service.save_document_result(
+                {
+                    "id": doc_id,
+                    "sourceFile": blob_name,
+                    "processedAt": datetime.now(timezone.utc).isoformat(),
+                    "status": "failed",
+                    "error": str(e),
+                    "fields": {},
+                    "confidence": {},
+                }
+            )
 
         except Exception as save_error:
             logger.error(f"Failed to save error state: {save_error}")

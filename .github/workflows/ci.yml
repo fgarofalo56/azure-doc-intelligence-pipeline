@@ -63,7 +63,7 @@ jobs:
         run: uv python install ${{ env.PYTHON_VERSION }}
 
       - name: Install bandit
-        run: uv pip install bandit[toml]
+        run: uv pip install bandit[toml] --system
 
       - name: Run Bandit security scanner
         run: |
@@ -104,7 +104,7 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Setup Bicep
-        uses: anthony-c-martin/setup-bicep@v1
+        uses: azure/setup-bicep@v0.3
 
       - name: Lint Bicep files
         run: |

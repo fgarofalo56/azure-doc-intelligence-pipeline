@@ -5,7 +5,6 @@ Splits PDFs into chunks of specified page count for processing.
 
 import io
 import logging
-from typing import BinaryIO
 
 from pypdf import PdfReader, PdfWriter
 
@@ -103,9 +102,7 @@ class PdfService:
                 # Convert to 1-indexed for logging/naming
                 chunks.append((chunk_bytes, start_page + 1, end_page))
 
-                logger.info(
-                    f"Created chunk {chunk_idx + 1}: pages {start_page + 1}-{end_page}"
-                )
+                logger.info(f"Created chunk {chunk_idx + 1}: pages {start_page + 1}-{end_page}")
 
             return chunks
 
@@ -139,8 +136,7 @@ class PdfService:
             # Validate page range
             if start_page < 1 or end_page > total_pages:
                 raise PdfSplitError(
-                    f"Invalid page range {start_page}-{end_page}. "
-                    f"PDF has {total_pages} pages."
+                    f"Invalid page range {start_page}-{end_page}. PDF has {total_pages} pages."
                 )
 
             if start_page > end_page:

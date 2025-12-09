@@ -128,7 +128,9 @@ class RateLimiter:
 
             # Get or create bucket
             if bucket_key not in self._buckets:
-                config = self._endpoint_limits.get(endpoint, self.config) if endpoint else self.config
+                config = (
+                    self._endpoint_limits.get(endpoint, self.config) if endpoint else self.config
+                )
                 self._buckets[bucket_key] = TokenBucket(capacity=config.burst_size)
 
             bucket = self._buckets[bucket_key]

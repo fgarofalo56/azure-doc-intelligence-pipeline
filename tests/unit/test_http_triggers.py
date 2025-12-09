@@ -62,9 +62,7 @@ def mock_cosmos_service():
     """Mock CosmosService."""
     with patch("function_app.get_cosmos_service") as mock:
         service = AsyncMock()
-        service.save_document_result = AsyncMock(
-            return_value={"id": "folder_test_pdf"}
-        )
+        service.save_document_result = AsyncMock(return_value={"id": "folder_test_pdf"})
         service.get_document = AsyncMock(
             return_value={
                 "id": "folder_test_pdf",
@@ -159,9 +157,7 @@ class TestProcessDocument:
 
         from services.document_service import RateLimitError
 
-        mock_document_service.analyze_document.side_effect = RateLimitError(
-            "Rate limit exceeded"
-        )
+        mock_document_service.analyze_document.side_effect = RateLimitError("Rate limit exceeded")
 
         req = create_mock_request(
             body={

@@ -84,8 +84,8 @@ class DocumentService:
                 endpoint=self.endpoint,
                 credential=self.credential,
             ) as client:
-                # Try to get model info
-                model_info = await client.get_analyze_result_figure(
+                # Try to get model info (result unused - we just check if call succeeds)
+                _model_info = await client.get_analyze_result_figure(
                     model_id=model_id,
                     result_id="validation-check",
                     figure_id="0",
@@ -99,15 +99,11 @@ class DocumentService:
                 # Check if it's the figure that's not found (expected) or the model
                 if "model" in str(e.message).lower():
                     logger.error(f"Model '{model_id}' not found")
-                    raise DocumentProcessingError(
-                        model_id, f"Model not found: {model_id}"
-                    ) from e
+                    raise DocumentProcessingError(model_id, f"Model not found: {model_id}") from e
                 # Figure not found is expected, model is valid
                 self._validated_models.add(model_id)
                 return True
-            raise DocumentProcessingError(
-                model_id, f"Model validation failed: {e.message}"
-            ) from e
+            raise DocumentProcessingError(model_id, f"Model validation failed: {e.message}") from e
         except Exception as e:
             # For other errors, assume model might be valid and let processing fail if not
             logger.warning(f"Could not validate model {model_id}: {e}")
@@ -187,9 +183,7 @@ class DocumentService:
 
                 except Exception as e:
                     logger.exception(f"Unexpected error processing document: {e}")
-                    raise DocumentProcessingError(
-                        blob_name or blob_url, str(e)
-                    ) from e
+                    raise DocumentProcessingError(blob_name or blob_url, str(e)) from e
 
             raise DocumentProcessingError(
                 blob_name or blob_url,
@@ -255,7 +249,10 @@ class DocumentService:
 
                         # Check which page this field is on
                         field_page = None
-                        if hasattr(field_value, "bounding_regions") and field_value.bounding_regions:
+                        if (
+                            hasattr(field_value, "bounding_regions")
+                            and field_value.bounding_regions
+                        ):
                             field_page = field_value.bounding_regions[0].page_number
 
                         # Store with page prefix if multi-page document
@@ -309,9 +306,7 @@ class DocumentService:
                 extracted_data["pages"] = pages
                 extracted_data["docType"] = result.documents[0].doc_type
                 if all_confidences:
-                    extracted_data["modelConfidence"] = sum(all_confidences) / len(
-                        all_confidences
-                    )
+                    extracted_data["modelConfidence"] = sum(all_confidences) / len(all_confidences)
 
                 # Populate top-level fields with page prefix
                 for page in pages:
@@ -380,10 +375,7 @@ class DocumentService:
 
         # Object fields
         if hasattr(field, "value_object") and field.value_object is not None:
-            return {
-                key: self._extract_field_value(val)
-                for key, val in field.value_object.items()
-            }
+            return {key: self._extract_field_value(val) for key, val in field.value_object.items()}
 
         # Fallback to content
         if hasattr(field, "content"):

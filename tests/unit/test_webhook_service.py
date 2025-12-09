@@ -1,10 +1,9 @@
 """Unit tests for the webhook service."""
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-from datetime import datetime, timezone
 
 import httpx
+import pytest
 
 
 class TestWebhookError:

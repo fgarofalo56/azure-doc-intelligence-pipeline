@@ -6,8 +6,9 @@ Provides structured logging and metrics tracking for document processing.
 import logging
 import os
 import time
+from collections.abc import Generator
 from contextlib import contextmanager
-from typing import Any, Generator
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +30,7 @@ class TelemetryService:
         if connection_string or instrumentation_key:
             try:
                 from opencensus.ext.azure import metrics_exporter
-                from opencensus.stats import aggregation, measure, stats, view
+                from opencensus.stats import aggregation, measure, stats, view  # noqa: F401
 
                 self._metrics_exporter = metrics_exporter.new_metrics_exporter(
                     connection_string=connection_string
@@ -112,9 +113,7 @@ class TelemetryService:
                 "Distribution of processing durations",
                 [self._tag_model_id],
                 self._measure_processing_duration,
-                aggregation.DistributionAggregation(
-                    [0, 1000, 5000, 10000, 30000, 60000, 120000]
-                ),
+                aggregation.DistributionAggregation([0, 1000, 5000, 10000, 30000, 60000, 120000]),
             )
 
             confidence_view = view.View(
@@ -122,9 +121,7 @@ class TelemetryService:
                 "Distribution of confidence scores",
                 [self._tag_model_id],
                 self._measure_confidence,
-                aggregation.DistributionAggregation(
-                    [0.0, 0.5, 0.7, 0.8, 0.9, 0.95, 1.0]
-                ),
+                aggregation.DistributionAggregation([0.0, 0.5, 0.7, 0.8, 0.9, 0.95, 1.0]),
             )
 
             self._view_manager.register_view(forms_view)
@@ -162,7 +159,6 @@ class TelemetryService:
             return
 
         try:
-            from opencensus.stats import measure as measure_module
             from opencensus.tags import tag_map, tag_value
 
             # Create tag map

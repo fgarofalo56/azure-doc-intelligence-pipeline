@@ -77,9 +77,7 @@ class TestDocumentIntelligenceIntegration:
     """Integration tests for Document Intelligence service."""
 
     @pytest.mark.asyncio
-    async def test_analyze_document_prebuilt_layout(
-        self, document_service, integration_config
-    ):
+    async def test_analyze_document_prebuilt_layout(self, document_service, integration_config):
         """Test document analysis with prebuilt-layout model."""
         result = await document_service.analyze_document(
             blob_url=integration_config["test_blob_url"],

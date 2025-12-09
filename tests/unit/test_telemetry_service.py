@@ -1,7 +1,6 @@
 """Unit tests for the telemetry service."""
 
-import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 
 class TestTelemetryService:
@@ -19,9 +18,7 @@ class TestTelemetryService:
 
     def test_init_with_instrumentation_key(self):
         """Test initialization with instrumentation key (but missing opencensus)."""
-        with patch.dict(
-            "os.environ", {"APPINSIGHTS_INSTRUMENTATIONKEY": "test-key"}, clear=True
-        ):
+        with patch.dict("os.environ", {"APPINSIGHTS_INSTRUMENTATIONKEY": "test-key"}, clear=True):
             with patch.dict("sys.modules", {"opencensus.ext.azure": None}):
                 from src.functions.services.telemetry_service import TelemetryService
 
@@ -131,7 +128,7 @@ class TestTelemetryServiceWithMockedOpenCensus:
 
     def test_track_form_processed_enabled(self):
         """Test track_form_processed with mocked OpenCensus."""
-        mock_exporter = MagicMock()
+        _mock_exporter = MagicMock()  # Reserved for future exporter assertions
         mock_stats = MagicMock()
         mock_view_manager = MagicMock()
         mock_stats_recorder = MagicMock()
