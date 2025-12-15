@@ -81,7 +81,7 @@ jobs:
           fi
 
       - name: Upload Bandit report
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: bandit-security-report
           path: bandit-report.json
@@ -138,7 +138,7 @@ jobs:
             --cov-fail-under=70
 
       - name: Upload coverage report
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: coverage-report
           path: htmlcov/
@@ -200,7 +200,7 @@ jobs:
           pip install -r requirements.txt --target=".python_packages/lib/site-packages"
 
       - name: Upload function artifact
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: function-app
           path: ${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}
