@@ -139,8 +139,11 @@ class DocumentService:
                         endpoint=self.endpoint,
                         credential=self.credential,
                     ) as client:
+                        # Security: Strip SAS token from URL before logging
+                        safe_url = blob_url.split("?")[0] if blob_url else ""
+                        log_identifier = blob_name or safe_url[:80]
                         logger.info(
-                            f"Analyzing document (attempt {attempt + 1}/{self.max_retries}): {blob_name or blob_url[:50]}"
+                            f"Analyzing document (attempt {attempt + 1}/{self.max_retries}): {log_identifier}"
                         )
 
                         # Analyze ALL pages (1- means page 1 to end)

@@ -26,6 +26,7 @@ class JobStatus(str, Enum):
     COMPLETED = "completed"
     FAILED = "failed"
     PARTIAL = "partial"
+    INTERRUPTED = "interrupted"  # Graceful shutdown interrupted processing
 
 
 @dataclass
@@ -329,6 +330,64 @@ class JobService:
             job.retry_count += 1
             await self.update_job(job)
             logger.info(f"Failed job {job_id}: {error}")
+        return job
+
+    async def interrupt_job(
+        self,
+        job_id: str,
+        checkpoint: dict[str, Any] | None = None,
+        reason: str = "Graceful shutdown",
+    ) -> ProcessingJob | None:
+        """Mark job as interrupted due to shutdown.
+
+        Args:
+            job_id: Job ID to interrupt.
+            checkpoint: Checkpoint data for resumption.
+            reason: Reason for interruption.
+
+        Returns:
+            ProcessingJob or None if not found.
+        """
+        job = await self.get_job(job_id)
+        if job:
+            job.status = JobStatus.INTERRUPTED
+            job.error = reason
+            job.updated_at = datetime.now(timezone.utc).isoformat()
+
+            # Save checkpoint in progress for resumption
+            if checkpoint:
+                job.progress["checkpoint"] = checkpoint
+                job.progress["interruptedAt"] = datetime.now(timezone.utc).isoformat()
+
+            await self.update_job(job)
+            logger.info(f"Interrupted job {job_id}: {reason}")
+        return job
+
+    async def resume_job(self, job_id: str) -> ProcessingJob | None:
+        """Resume an interrupted job.
+
+        Args:
+            job_id: Job ID to resume.
+
+        Returns:
+            ProcessingJob or None if not found or not resumable.
+        """
+        job = await self.get_job(job_id)
+        if not job:
+            return None
+
+        if job.status != JobStatus.INTERRUPTED:
+            logger.warning(f"Cannot resume job {job_id} with status {job.status}")
+            return None
+
+        # Clear interrupted status and re-queue
+        job.status = JobStatus.PENDING
+        job.error = None
+        job.updated_at = datetime.now(timezone.utc).isoformat()
+
+        await self.update_job(job)
+        logger.info(f"Resumed job {job_id}")
+
         return job
 
     async def update_progress(

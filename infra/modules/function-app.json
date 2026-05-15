@@ -1,0 +1,403 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.39.26.7824",
+      "templateHash": "10611444994923031175"
+    }
+  },
+  "parameters": {
+    "prefix": {
+      "type": "string",
+      "metadata": {
+        "description": "Prefix for resource naming"
+      }
+    },
+    "location": {
+      "type": "string",
+      "defaultValue": "[resourceGroup().location]",
+      "metadata": {
+        "description": "Azure region for deployment"
+      }
+    },
+    "environment": {
+      "type": "string",
+      "metadata": {
+        "description": "Environment name (dev, prod)"
+      }
+    },
+    "tags": {
+      "type": "object",
+      "defaultValue": {},
+      "metadata": {
+        "description": "Tags to apply to resources"
+      }
+    },
+    "storageConnectionString": {
+      "type": "string",
+      "metadata": {
+        "description": "Storage account connection string for Function App"
+      }
+    },
+    "docIntelEndpoint": {
+      "type": "string",
+      "metadata": {
+        "description": "Document Intelligence endpoint"
+      }
+    },
+    "docIntelApiKey": {
+      "type": "securestring",
+      "metadata": {
+        "description": "Document Intelligence API key"
+      }
+    },
+    "cosmosEndpoint": {
+      "type": "string",
+      "metadata": {
+        "description": "Cosmos DB endpoint"
+      }
+    },
+    "cosmosDatabase": {
+      "type": "string",
+      "metadata": {
+        "description": "Cosmos DB database name"
+      }
+    },
+    "cosmosContainer": {
+      "type": "string",
+      "metadata": {
+        "description": "Cosmos DB container name"
+      }
+    },
+    "keyVaultName": {
+      "type": "string",
+      "metadata": {
+        "description": "Key Vault name for secret references"
+      }
+    },
+    "logAnalyticsWorkspaceId": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Log Analytics workspace ID for diagnostic settings (optional)"
+      }
+    },
+    "enableDiagnostics": {
+      "type": "bool",
+      "defaultValue": true,
+      "metadata": {
+        "description": "Enable diagnostic settings"
+      }
+    },
+    "appServicePlanSku": {
+      "type": "string",
+      "defaultValue": "Y1",
+      "allowedValues": [
+        "Y1",
+        "B1",
+        "B2",
+        "S1",
+        "P1v2",
+        "EP1"
+      ],
+      "metadata": {
+        "description": "App Service Plan SKU. Use Y1 for Consumption (requires Dynamic VM quota), B1 for Basic, S1 for Standard, EP1 for Premium."
+      }
+    },
+    "enableNetworkHardening": {
+      "type": "bool",
+      "defaultValue": false,
+      "metadata": {
+        "description": "Enable network hardening (restrict public access). Requires VNet integration subnet."
+      }
+    },
+    "vnetIntegrationSubnetId": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Subnet resource ID for VNet integration. Required when enableNetworkHardening is true."
+      }
+    },
+    "publicNetworkAccess": {
+      "type": "string",
+      "defaultValue": "Enabled",
+      "allowedValues": [
+        "Enabled",
+        "Disabled"
+      ],
+      "metadata": {
+        "description": "Restrict public network access. Set to \"Disabled\" for Private Endpoint only access."
+      }
+    },
+    "scmAllowedIpRanges": {
+      "type": "array",
+      "defaultValue": [],
+      "metadata": {
+        "description": "Allowed IP addresses for SCM/deployment site (CIDR notation). Only applies when publicNetworkAccess is Enabled."
+      }
+    }
+  },
+  "variables": {
+    "copy": [
+      {
+        "name": "scmIpSecurityRestrictions",
+        "count": "[length(parameters('scmAllowedIpRanges'))]",
+        "input": {
+          "name": "[format('AllowIP{0}', copyIndex('scmIpSecurityRestrictions'))]",
+          "ipAddress": "[parameters('scmAllowedIpRanges')[copyIndex('scmIpSecurityRestrictions')]]",
+          "action": "Allow",
+          "priority": "[add(100, copyIndex('scmIpSecurityRestrictions'))]"
+        }
+      }
+    ],
+    "skuTiers": {
+      "Y1": "Dynamic",
+      "B1": "Basic",
+      "B2": "Basic",
+      "S1": "Standard",
+      "P1v2": "PremiumV2",
+      "EP1": "ElasticPremium"
+    },
+    "skuTier": "[variables('skuTiers')[parameters('appServicePlanSku')]]",
+    "isConsumptionPlan": "[equals(parameters('appServicePlanSku'), 'Y1')]",
+    "isElasticPremium": "[equals(parameters('appServicePlanSku'), 'EP1')]",
+    "functionAppName": "[format('{0}-func-{1}', parameters('prefix'), parameters('environment'))]",
+    "appServicePlanName": "[format('{0}-asp-{1}', parameters('prefix'), parameters('environment'))]",
+    "appInsightsName": "[format('{0}-ai-{1}', parameters('prefix'), parameters('environment'))]"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Insights/components",
+      "apiVersion": "2020-02-02",
+      "name": "[variables('appInsightsName')]",
+      "location": "[parameters('location')]",
+      "tags": "[parameters('tags')]",
+      "kind": "web",
+      "properties": {
+        "Application_Type": "web",
+        "Request_Source": "rest",
+        "WorkspaceResourceId": "[if(not(equals(parameters('logAnalyticsWorkspaceId'), '')), parameters('logAnalyticsWorkspaceId'), null())]",
+        "publicNetworkAccessForIngestion": "Enabled",
+        "publicNetworkAccessForQuery": "Enabled"
+      }
+    },
+    {
+      "type": "Microsoft.Web/serverfarms",
+      "apiVersion": "2024-04-01",
+      "name": "[variables('appServicePlanName')]",
+      "location": "[parameters('location')]",
+      "tags": "[parameters('tags')]",
+      "kind": "[if(variables('isElasticPremium'), 'elastic', 'functionapp')]",
+      "sku": {
+        "name": "[parameters('appServicePlanSku')]",
+        "tier": "[variables('skuTier')]"
+      },
+      "properties": {
+        "reserved": true,
+        "maximumElasticWorkerCount": "[if(variables('isElasticPremium'), 20, null())]"
+      }
+    },
+    {
+      "type": "Microsoft.Web/sites",
+      "apiVersion": "2024-04-01",
+      "name": "[variables('functionAppName')]",
+      "location": "[parameters('location')]",
+      "tags": "[parameters('tags')]",
+      "kind": "functionapp,linux",
+      "identity": {
+        "type": "SystemAssigned"
+      },
+      "properties": {
+        "serverFarmId": "[resourceId('Microsoft.Web/serverfarms', variables('appServicePlanName'))]",
+        "httpsOnly": true,
+        "publicNetworkAccess": "[parameters('publicNetworkAccess')]",
+        "virtualNetworkSubnetId": "[if(and(parameters('enableNetworkHardening'), not(equals(parameters('vnetIntegrationSubnetId'), ''))), parameters('vnetIntegrationSubnetId'), null())]",
+        "siteConfig": {
+          "linuxFxVersion": "PYTHON|3.10",
+          "pythonVersion": "3.10",
+          "ftpsState": "Disabled",
+          "scmIpSecurityRestrictions": "[if(parameters('enableNetworkHardening'), variables('scmIpSecurityRestrictions'), createArray())]",
+          "scmIpSecurityRestrictionsUseMain": false,
+          "minTlsVersion": "1.2",
+          "http20Enabled": true,
+          "functionAppScaleLimit": 200,
+          "appSettings": [
+            {
+              "name": "FUNCTIONS_EXTENSION_VERSION",
+              "value": "~4"
+            },
+            {
+              "name": "FUNCTIONS_WORKER_RUNTIME",
+              "value": "python"
+            },
+            {
+              "name": "AzureWebJobsStorage",
+              "value": "[parameters('storageConnectionString')]"
+            },
+            {
+              "name": "WEBSITE_CONTENTAZUREFILECONNECTIONSTRING",
+              "value": "[parameters('storageConnectionString')]"
+            },
+            {
+              "name": "WEBSITE_CONTENTSHARE",
+              "value": "[variables('functionAppName')]"
+            },
+            {
+              "name": "APPINSIGHTS_INSTRUMENTATIONKEY",
+              "value": "[reference(resourceId('Microsoft.Insights/components', variables('appInsightsName')), '2020-02-02').InstrumentationKey]"
+            },
+            {
+              "name": "APPLICATIONINSIGHTS_CONNECTION_STRING",
+              "value": "[reference(resourceId('Microsoft.Insights/components', variables('appInsightsName')), '2020-02-02').ConnectionString]"
+            },
+            {
+              "name": "DOC_INTEL_ENDPOINT",
+              "value": "[parameters('docIntelEndpoint')]"
+            },
+            {
+              "name": "DOC_INTEL_API_KEY",
+              "value": "[parameters('docIntelApiKey')]"
+            },
+            {
+              "name": "COSMOS_ENDPOINT",
+              "value": "[parameters('cosmosEndpoint')]"
+            },
+            {
+              "name": "COSMOS_DATABASE",
+              "value": "[parameters('cosmosDatabase')]"
+            },
+            {
+              "name": "COSMOS_CONTAINER",
+              "value": "[parameters('cosmosContainer')]"
+            },
+            {
+              "name": "KEY_VAULT_NAME",
+              "value": "[parameters('keyVaultName')]"
+            },
+            {
+              "name": "SCM_DO_BUILD_DURING_DEPLOYMENT",
+              "value": "true"
+            },
+            {
+              "name": "ENABLE_ORYX_BUILD",
+              "value": "true"
+            }
+          ]
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Insights/components', variables('appInsightsName'))]",
+        "[resourceId('Microsoft.Web/serverfarms', variables('appServicePlanName'))]"
+      ]
+    },
+    {
+      "condition": "[and(parameters('enableDiagnostics'), not(equals(parameters('logAnalyticsWorkspaceId'), '')))]",
+      "type": "Microsoft.Insights/diagnosticSettings",
+      "apiVersion": "2021-05-01-preview",
+      "scope": "[format('Microsoft.Web/sites/{0}', variables('functionAppName'))]",
+      "name": "[format('{0}-diagnostics', variables('functionAppName'))]",
+      "properties": {
+        "workspaceId": "[parameters('logAnalyticsWorkspaceId')]",
+        "logs": [
+          {
+            "category": "FunctionAppLogs",
+            "enabled": true,
+            "retentionPolicy": {
+              "enabled": false,
+              "days": 0
+            }
+          }
+        ],
+        "metrics": [
+          {
+            "category": "AllMetrics",
+            "enabled": true,
+            "retentionPolicy": {
+              "enabled": false,
+              "days": 0
+            }
+          }
+        ]
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Web/sites', variables('functionAppName'))]"
+      ]
+    },
+    {
+      "condition": "[and(parameters('enableDiagnostics'), not(equals(parameters('logAnalyticsWorkspaceId'), '')))]",
+      "type": "Microsoft.Insights/diagnosticSettings",
+      "apiVersion": "2021-05-01-preview",
+      "scope": "[format('Microsoft.Web/serverfarms/{0}', variables('appServicePlanName'))]",
+      "name": "[format('{0}-diagnostics', variables('appServicePlanName'))]",
+      "properties": {
+        "workspaceId": "[parameters('logAnalyticsWorkspaceId')]",
+        "metrics": [
+          {
+            "category": "AllMetrics",
+            "enabled": true,
+            "retentionPolicy": {
+              "enabled": false,
+              "days": 0
+            }
+          }
+        ]
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Web/serverfarms', variables('appServicePlanName'))]"
+      ]
+    }
+  ],
+  "outputs": {
+    "name": {
+      "type": "string",
+      "metadata": {
+        "description": "Function App name"
+      },
+      "value": "[variables('functionAppName')]"
+    },
+    "resourceId": {
+      "type": "string",
+      "metadata": {
+        "description": "Function App resource ID"
+      },
+      "value": "[resourceId('Microsoft.Web/sites', variables('functionAppName'))]"
+    },
+    "defaultHostname": {
+      "type": "string",
+      "metadata": {
+        "description": "Function App default hostname"
+      },
+      "value": "[reference(resourceId('Microsoft.Web/sites', variables('functionAppName')), '2024-04-01').defaultHostName]"
+    },
+    "functionAppUrl": {
+      "type": "string",
+      "metadata": {
+        "description": "Function App URL"
+      },
+      "value": "[format('https://{0}', reference(resourceId('Microsoft.Web/sites', variables('functionAppName')), '2024-04-01').defaultHostName)]"
+    },
+    "principalId": {
+      "type": "string",
+      "metadata": {
+        "description": "Function App principal ID for managed identity"
+      },
+      "value": "[reference(resourceId('Microsoft.Web/sites', variables('functionAppName')), '2024-04-01', 'full').identity.principalId]"
+    },
+    "appInsightsKey": {
+      "type": "string",
+      "metadata": {
+        "description": "Application Insights instrumentation key"
+      },
+      "value": "[reference(resourceId('Microsoft.Insights/components', variables('appInsightsName')), '2020-02-02').InstrumentationKey]"
+    },
+    "appInsightsId": {
+      "type": "string",
+      "metadata": {
+        "description": "Application Insights resource ID"
+      },
+      "value": "[resourceId('Microsoft.Insights/components', variables('appInsightsName'))]"
+    }
+  }
+}

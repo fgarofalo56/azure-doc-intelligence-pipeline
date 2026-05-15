@@ -1,0 +1,403 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.39.26.7824",
+      "templateHash": "259645707433648291"
+    }
+  },
+  "parameters": {
+    "prefix": {
+      "type": "string",
+      "metadata": {
+        "description": "Prefix for resource naming"
+      }
+    },
+    "location": {
+      "type": "string",
+      "defaultValue": "[resourceGroup().location]",
+      "metadata": {
+        "description": "Azure region for deployment"
+      }
+    },
+    "environment": {
+      "type": "string",
+      "metadata": {
+        "description": "Environment name (dev, prod)"
+      }
+    },
+    "tags": {
+      "type": "object",
+      "defaultValue": {},
+      "metadata": {
+        "description": "Tags to apply to resources"
+      }
+    },
+    "storageAccountId": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Storage account resource ID (optional - provide to create storage private endpoint)"
+      }
+    },
+    "storageAccountName": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Storage account name (required if storageAccountId is provided)"
+      }
+    },
+    "cosmosAccountId": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Cosmos DB account resource ID (optional - provide to create Cosmos DB private endpoint)"
+      }
+    },
+    "cosmosAccountName": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Cosmos DB account name (required if cosmosAccountId is provided)"
+      }
+    },
+    "keyVaultId": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Key Vault resource ID (optional - provide to create Key Vault private endpoint)"
+      }
+    },
+    "keyVaultName": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Key Vault name (required if keyVaultId is provided)"
+      }
+    },
+    "vnetId": {
+      "type": "string",
+      "metadata": {
+        "description": "Virtual Network resource ID where private endpoints will be created"
+      }
+    },
+    "privateEndpointSubnetId": {
+      "type": "string",
+      "metadata": {
+        "description": "Subnet resource ID for private endpoints"
+      }
+    },
+    "createPrivateDnsZones": {
+      "type": "bool",
+      "defaultValue": true,
+      "metadata": {
+        "description": "Create private DNS zones (set to false if using centralized DNS zones)"
+      }
+    },
+    "existingBlobDnsZoneId": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Existing Private DNS Zone resource ID for blob storage (required if createPrivateDnsZones is false)"
+      }
+    },
+    "existingCosmosDnsZoneId": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Existing Private DNS Zone resource ID for Cosmos DB (required if createPrivateDnsZones is false)"
+      }
+    },
+    "existingKeyVaultDnsZoneId": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Existing Private DNS Zone resource ID for Key Vault (required if createPrivateDnsZones is false)"
+      }
+    }
+  },
+  "variables": {
+    "createStorageEndpoint": "[and(not(equals(parameters('storageAccountId'), '')), not(equals(parameters('storageAccountName'), '')))]",
+    "createCosmosEndpoint": "[and(not(equals(parameters('cosmosAccountId'), '')), not(equals(parameters('cosmosAccountName'), '')))]",
+    "createKeyVaultEndpoint": "[and(not(equals(parameters('keyVaultId'), '')), not(equals(parameters('keyVaultName'), '')))]",
+    "blobDnsZoneName": "[format('privatelink.blob.{0}', environment().suffixes.storage)]",
+    "cosmosDnsZoneName": "privatelink.documents.azure.com",
+    "keyVaultDnsZoneName": "privatelink.vaultcore.azure.net"
+  },
+  "resources": [
+    {
+      "condition": "[and(parameters('createPrivateDnsZones'), variables('createStorageEndpoint'))]",
+      "type": "Microsoft.Network/privateDnsZones",
+      "apiVersion": "2024-06-01",
+      "name": "[variables('blobDnsZoneName')]",
+      "location": "global",
+      "tags": "[parameters('tags')]"
+    },
+    {
+      "condition": "[and(parameters('createPrivateDnsZones'), variables('createCosmosEndpoint'))]",
+      "type": "Microsoft.Network/privateDnsZones",
+      "apiVersion": "2024-06-01",
+      "name": "[variables('cosmosDnsZoneName')]",
+      "location": "global",
+      "tags": "[parameters('tags')]"
+    },
+    {
+      "condition": "[and(parameters('createPrivateDnsZones'), variables('createKeyVaultEndpoint'))]",
+      "type": "Microsoft.Network/privateDnsZones",
+      "apiVersion": "2024-06-01",
+      "name": "[variables('keyVaultDnsZoneName')]",
+      "location": "global",
+      "tags": "[parameters('tags')]"
+    },
+    {
+      "condition": "[and(parameters('createPrivateDnsZones'), variables('createStorageEndpoint'))]",
+      "type": "Microsoft.Network/privateDnsZones/virtualNetworkLinks",
+      "apiVersion": "2024-06-01",
+      "name": "[format('{0}/{1}', variables('blobDnsZoneName'), format('{0}-blob-vnet-link', parameters('prefix')))]",
+      "location": "global",
+      "tags": "[parameters('tags')]",
+      "properties": {
+        "registrationEnabled": false,
+        "virtualNetwork": {
+          "id": "[parameters('vnetId')]"
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Network/privateDnsZones', variables('blobDnsZoneName'))]"
+      ]
+    },
+    {
+      "condition": "[and(parameters('createPrivateDnsZones'), variables('createCosmosEndpoint'))]",
+      "type": "Microsoft.Network/privateDnsZones/virtualNetworkLinks",
+      "apiVersion": "2024-06-01",
+      "name": "[format('{0}/{1}', variables('cosmosDnsZoneName'), format('{0}-cosmos-vnet-link', parameters('prefix')))]",
+      "location": "global",
+      "tags": "[parameters('tags')]",
+      "properties": {
+        "registrationEnabled": false,
+        "virtualNetwork": {
+          "id": "[parameters('vnetId')]"
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Network/privateDnsZones', variables('cosmosDnsZoneName'))]"
+      ]
+    },
+    {
+      "condition": "[and(parameters('createPrivateDnsZones'), variables('createKeyVaultEndpoint'))]",
+      "type": "Microsoft.Network/privateDnsZones/virtualNetworkLinks",
+      "apiVersion": "2024-06-01",
+      "name": "[format('{0}/{1}', variables('keyVaultDnsZoneName'), format('{0}-kv-vnet-link', parameters('prefix')))]",
+      "location": "global",
+      "tags": "[parameters('tags')]",
+      "properties": {
+        "registrationEnabled": false,
+        "virtualNetwork": {
+          "id": "[parameters('vnetId')]"
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Network/privateDnsZones', variables('keyVaultDnsZoneName'))]"
+      ]
+    },
+    {
+      "condition": "[variables('createStorageEndpoint')]",
+      "type": "Microsoft.Network/privateEndpoints",
+      "apiVersion": "2024-05-01",
+      "name": "[format('{0}-pe-storage-{1}', parameters('prefix'), parameters('environment'))]",
+      "location": "[parameters('location')]",
+      "tags": "[parameters('tags')]",
+      "properties": {
+        "subnet": {
+          "id": "[parameters('privateEndpointSubnetId')]"
+        },
+        "privateLinkServiceConnections": [
+          {
+            "name": "[format('{0}-plsc-storage', parameters('prefix'))]",
+            "properties": {
+              "privateLinkServiceId": "[parameters('storageAccountId')]",
+              "groupIds": [
+                "blob"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "condition": "[variables('createStorageEndpoint')]",
+      "type": "Microsoft.Network/privateEndpoints/privateDnsZoneGroups",
+      "apiVersion": "2024-05-01",
+      "name": "[format('{0}/{1}', format('{0}-pe-storage-{1}', parameters('prefix'), parameters('environment')), 'default')]",
+      "properties": {
+        "privateDnsZoneConfigs": [
+          {
+            "name": "privatelink-blob-storage",
+            "properties": {
+              "privateDnsZoneId": "[if(parameters('createPrivateDnsZones'), resourceId('Microsoft.Network/privateDnsZones', variables('blobDnsZoneName')), parameters('existingBlobDnsZoneId'))]"
+            }
+          }
+        ]
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Network/privateDnsZones', variables('blobDnsZoneName'))]",
+        "[resourceId('Microsoft.Network/privateEndpoints', format('{0}-pe-storage-{1}', parameters('prefix'), parameters('environment')))]"
+      ]
+    },
+    {
+      "condition": "[variables('createCosmosEndpoint')]",
+      "type": "Microsoft.Network/privateEndpoints",
+      "apiVersion": "2024-05-01",
+      "name": "[format('{0}-pe-cosmos-{1}', parameters('prefix'), parameters('environment'))]",
+      "location": "[parameters('location')]",
+      "tags": "[parameters('tags')]",
+      "properties": {
+        "subnet": {
+          "id": "[parameters('privateEndpointSubnetId')]"
+        },
+        "privateLinkServiceConnections": [
+          {
+            "name": "[format('{0}-plsc-cosmos', parameters('prefix'))]",
+            "properties": {
+              "privateLinkServiceId": "[parameters('cosmosAccountId')]",
+              "groupIds": [
+                "Sql"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "condition": "[variables('createCosmosEndpoint')]",
+      "type": "Microsoft.Network/privateEndpoints/privateDnsZoneGroups",
+      "apiVersion": "2024-05-01",
+      "name": "[format('{0}/{1}', format('{0}-pe-cosmos-{1}', parameters('prefix'), parameters('environment')), 'default')]",
+      "properties": {
+        "privateDnsZoneConfigs": [
+          {
+            "name": "privatelink-cosmos-documents",
+            "properties": {
+              "privateDnsZoneId": "[if(parameters('createPrivateDnsZones'), resourceId('Microsoft.Network/privateDnsZones', variables('cosmosDnsZoneName')), parameters('existingCosmosDnsZoneId'))]"
+            }
+          }
+        ]
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Network/privateDnsZones', variables('cosmosDnsZoneName'))]",
+        "[resourceId('Microsoft.Network/privateEndpoints', format('{0}-pe-cosmos-{1}', parameters('prefix'), parameters('environment')))]"
+      ]
+    },
+    {
+      "condition": "[variables('createKeyVaultEndpoint')]",
+      "type": "Microsoft.Network/privateEndpoints",
+      "apiVersion": "2024-05-01",
+      "name": "[format('{0}-pe-kv-{1}', parameters('prefix'), parameters('environment'))]",
+      "location": "[parameters('location')]",
+      "tags": "[parameters('tags')]",
+      "properties": {
+        "subnet": {
+          "id": "[parameters('privateEndpointSubnetId')]"
+        },
+        "privateLinkServiceConnections": [
+          {
+            "name": "[format('{0}-plsc-keyvault', parameters('prefix'))]",
+            "properties": {
+              "privateLinkServiceId": "[parameters('keyVaultId')]",
+              "groupIds": [
+                "vault"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "condition": "[variables('createKeyVaultEndpoint')]",
+      "type": "Microsoft.Network/privateEndpoints/privateDnsZoneGroups",
+      "apiVersion": "2024-05-01",
+      "name": "[format('{0}/{1}', format('{0}-pe-kv-{1}', parameters('prefix'), parameters('environment')), 'default')]",
+      "properties": {
+        "privateDnsZoneConfigs": [
+          {
+            "name": "privatelink-keyvault",
+            "properties": {
+              "privateDnsZoneId": "[if(parameters('createPrivateDnsZones'), resourceId('Microsoft.Network/privateDnsZones', variables('keyVaultDnsZoneName')), parameters('existingKeyVaultDnsZoneId'))]"
+            }
+          }
+        ]
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Network/privateDnsZones', variables('keyVaultDnsZoneName'))]",
+        "[resourceId('Microsoft.Network/privateEndpoints', format('{0}-pe-kv-{1}', parameters('prefix'), parameters('environment')))]"
+      ]
+    }
+  ],
+  "outputs": {
+    "storagePrivateEndpointId": {
+      "type": "string",
+      "metadata": {
+        "description": "Storage private endpoint resource ID"
+      },
+      "value": "[if(variables('createStorageEndpoint'), resourceId('Microsoft.Network/privateEndpoints', format('{0}-pe-storage-{1}', parameters('prefix'), parameters('environment'))), '')]"
+    },
+    "storagePrivateEndpointName": {
+      "type": "string",
+      "metadata": {
+        "description": "Storage private endpoint name"
+      },
+      "value": "[if(variables('createStorageEndpoint'), format('{0}-pe-storage-{1}', parameters('prefix'), parameters('environment')), '')]"
+    },
+    "cosmosPrivateEndpointId": {
+      "type": "string",
+      "metadata": {
+        "description": "Cosmos DB private endpoint resource ID"
+      },
+      "value": "[if(variables('createCosmosEndpoint'), resourceId('Microsoft.Network/privateEndpoints', format('{0}-pe-cosmos-{1}', parameters('prefix'), parameters('environment'))), '')]"
+    },
+    "cosmosPrivateEndpointName": {
+      "type": "string",
+      "metadata": {
+        "description": "Cosmos DB private endpoint name"
+      },
+      "value": "[if(variables('createCosmosEndpoint'), format('{0}-pe-cosmos-{1}', parameters('prefix'), parameters('environment')), '')]"
+    },
+    "keyVaultPrivateEndpointId": {
+      "type": "string",
+      "metadata": {
+        "description": "Key Vault private endpoint resource ID"
+      },
+      "value": "[if(variables('createKeyVaultEndpoint'), resourceId('Microsoft.Network/privateEndpoints', format('{0}-pe-kv-{1}', parameters('prefix'), parameters('environment'))), '')]"
+    },
+    "keyVaultPrivateEndpointName": {
+      "type": "string",
+      "metadata": {
+        "description": "Key Vault private endpoint name"
+      },
+      "value": "[if(variables('createKeyVaultEndpoint'), format('{0}-pe-kv-{1}', parameters('prefix'), parameters('environment')), '')]"
+    },
+    "blobDnsZoneId": {
+      "type": "string",
+      "metadata": {
+        "description": "Blob Private DNS Zone resource ID"
+      },
+      "value": "[if(and(parameters('createPrivateDnsZones'), variables('createStorageEndpoint')), resourceId('Microsoft.Network/privateDnsZones', variables('blobDnsZoneName')), parameters('existingBlobDnsZoneId'))]"
+    },
+    "cosmosDnsZoneId": {
+      "type": "string",
+      "metadata": {
+        "description": "Cosmos DB Private DNS Zone resource ID"
+      },
+      "value": "[if(and(parameters('createPrivateDnsZones'), variables('createCosmosEndpoint')), resourceId('Microsoft.Network/privateDnsZones', variables('cosmosDnsZoneName')), parameters('existingCosmosDnsZoneId'))]"
+    },
+    "keyVaultDnsZoneId": {
+      "type": "string",
+      "metadata": {
+        "description": "Key Vault Private DNS Zone resource ID"
+      },
+      "value": "[if(and(parameters('createPrivateDnsZones'), variables('createKeyVaultEndpoint')), resourceId('Microsoft.Network/privateDnsZones', variables('keyVaultDnsZoneName')), parameters('existingKeyVaultDnsZoneId'))]"
+    }
+  }
+}

@@ -4,12 +4,125 @@ Generates SAS tokens to allow Document Intelligence to access private blobs.
 """
 
 import logging
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from urllib.parse import unquote, urlparse
 
 from azure.storage.blob import BlobSasPermissions, BlobServiceClient, generate_blob_sas
 
 logger = logging.getLogger(__name__)
+
+# Maximum blob size allowed for processing (100 MB)
+MAX_BLOB_SIZE_BYTES = 100 * 1024 * 1024
+
+
+@dataclass
+class ParsedBlobUrl:
+    """Parsed components of an Azure Blob Storage URL."""
+
+    account_name: str
+    container_name: str
+    blob_name: str
+    original_url: str
+
+    @property
+    def base_url(self) -> str:
+        """Return URL without SAS token."""
+        return self.original_url.split("?")[0]
+
+
+def parse_blob_url_components(blob_url: str, validate: bool = True) -> ParsedBlobUrl:
+    """Parse a blob URL into its components.
+
+    This is the single source of truth for blob URL parsing.
+    URL format: https://<account>.blob.core.windows.net/<container>/<blob_path>
+
+    Args:
+        blob_url: Full blob URL (may include SAS token).
+        validate: Whether to validate blob name for security issues (default True).
+
+    Returns:
+        ParsedBlobUrl: Parsed URL components.
+
+    Raises:
+        BlobServiceError: If URL is invalid or contains path traversal.
+    """
+    try:
+        # Remove SAS token if present
+        base_url = blob_url.split("?")[0]
+        parsed = urlparse(base_url)
+
+        # Validate hostname
+        if not parsed.netloc or "." not in parsed.netloc:
+            raise BlobServiceError(f"Invalid blob URL hostname: {parsed.netloc}")
+
+        # Extract account name
+        hostname_parts = parsed.netloc.split(".")
+        account_name = hostname_parts[0]
+
+        if not account_name:
+            raise BlobServiceError(f"Could not extract account name from URL: {blob_url}")
+
+        # Extract container and blob path
+        # Path format: /<container>/<blob_path>
+        path_parts = parsed.path.lstrip("/").split("/", 1)
+        if len(path_parts) < 2:
+            raise BlobServiceError(f"Invalid blob URL path: {parsed.path}")
+
+        container_name = path_parts[0]
+        # URL-decode the blob name to handle spaces (%20) and special chars
+        blob_name = unquote(path_parts[1])
+
+        # Security: Validate blob name for path traversal attacks
+        if validate:
+            validate_blob_name(blob_name)
+
+        return ParsedBlobUrl(
+            account_name=account_name,
+            container_name=container_name,
+            blob_name=blob_name,
+            original_url=blob_url,
+        )
+
+    except BlobServiceError:
+        raise
+    except Exception as e:
+        raise BlobServiceError(f"Failed to parse blob URL: {e}") from e
+
+
+def sanitize_blob_url(blob_url: str) -> str:
+    """Remove SAS token from URL for safe logging.
+
+    Args:
+        blob_url: Blob URL that may contain SAS token.
+
+    Returns:
+        str: URL without SAS token query parameters.
+    """
+    return blob_url.split("?")[0]
+
+
+def validate_blob_name(blob_name: str) -> None:
+    """Validate blob name for security issues.
+
+    Args:
+        blob_name: Blob name to validate.
+
+    Raises:
+        BlobServiceError: If blob name is invalid or contains path traversal.
+    """
+    if not blob_name:
+        raise BlobServiceError("Blob name cannot be empty")
+
+    if ".." in blob_name:
+        raise BlobServiceError(f"Invalid blob name (path traversal detected): {blob_name}")
+
+    if blob_name.startswith("/"):
+        raise BlobServiceError(f"Invalid blob name (absolute path not allowed): {blob_name}")
+
+    # Check for null bytes (path injection)
+    if "\x00" in blob_name:
+        raise BlobServiceError("Invalid blob name (null byte detected)")
 
 
 class BlobServiceError(Exception):
@@ -60,30 +173,12 @@ class BlobService:
             BlobServiceError: If SAS generation fails.
         """
         try:
-            # Parse the blob URL
-            parsed = urlparse(blob_url)
-
-            # Extract account name from URL
-            # URL format: https://<account>.blob.core.windows.net/<container>/<blob>
-            hostname_parts = parsed.netloc.split(".")
-            if len(hostname_parts) < 1:
-                raise BlobServiceError(f"Invalid blob URL hostname: {parsed.netloc}")
-
-            account_name = hostname_parts[0]
-
-            # Extract container and blob path
-            # Path format: /<container>/<blob_path>
-            path_parts = parsed.path.lstrip("/").split("/", 1)
-            if len(path_parts) < 2:
-                raise BlobServiceError(f"Invalid blob URL path: {parsed.path}")
-
-            container_name = path_parts[0]
-            # URL-decode the blob name to handle spaces (%20) and special chars
-            blob_name = unquote(path_parts[1])
+            # Parse the blob URL using shared utility
+            parsed = parse_blob_url_components(blob_url)
 
             logger.debug(
-                f"Generating SAS for account={account_name}, "
-                f"container={container_name}, blob={blob_name}"
+                f"Generating SAS for account={parsed.account_name}, "
+                f"container={parsed.container_name}, blob={parsed.blob_name}"
             )
 
             # Get account key from connection string
@@ -91,17 +186,17 @@ class BlobService:
 
             # Generate SAS token
             sas_token = generate_blob_sas(
-                account_name=account_name,
-                container_name=container_name,
-                blob_name=blob_name,
+                account_name=parsed.account_name,
+                container_name=parsed.container_name,
+                blob_name=parsed.blob_name,
                 account_key=account_key,
                 permission=BlobSasPermissions(read=True),
                 expiry=datetime.now(timezone.utc) + timedelta(hours=self.sas_expiry_hours),
             )
 
             # Construct SAS URL
-            sas_url = f"{blob_url}?{sas_token}"
-            logger.info(f"Generated SAS URL for blob: {blob_name}")
+            sas_url = f"{parsed.base_url}?{sas_token}"
+            logger.info(f"Generated SAS URL for blob: {parsed.blob_name}")
 
             return sas_url
 
@@ -148,22 +243,13 @@ class BlobService:
             BlobServiceError: If download fails.
         """
         try:
-            # Parse the blob URL
-            parsed = urlparse(blob_url.split("?")[0])  # Remove SAS token if present
+            # Parse the blob URL using shared utility
+            parsed = parse_blob_url_components(blob_url)
 
-            # Extract container and blob path
-            path_parts = parsed.path.lstrip("/").split("/", 1)
-            if len(path_parts) < 2:
-                raise BlobServiceError(f"Invalid blob URL path: {parsed.path}")
+            logger.info(f"Downloading blob: {parsed.container_name}/{parsed.blob_name}")
 
-            container_name = path_parts[0]
-            # URL-decode the blob name to handle spaces (%20) and special chars
-            blob_name = unquote(path_parts[1])
-
-            logger.info(f"Downloading blob: {container_name}/{blob_name}")
-
-            container_client = self.client.get_container_client(container_name)
-            blob_client = container_client.get_blob_client(blob_name)
+            container_client = self.client.get_container_client(parsed.container_name)
+            blob_client = container_client.get_blob_client(parsed.blob_name)
 
             blob_data = blob_client.download_blob().readall()
             logger.info(f"Downloaded {len(blob_data)} bytes")
@@ -244,25 +330,14 @@ class BlobService:
             blob_url: Full blob URL.
 
         Returns:
-            tuple: (container_name, blob_name) - blob_name is URL-decoded
+            tuple: (container_name, blob_name) - blob_name is URL-decoded and validated
 
         Raises:
-            BlobServiceError: If URL is invalid.
+            BlobServiceError: If URL is invalid or contains path traversal.
         """
-        try:
-            parsed = urlparse(blob_url.split("?")[0])  # Remove SAS token if present
-            path_parts = parsed.path.lstrip("/").split("/", 1)
-
-            if len(path_parts) < 2:
-                raise BlobServiceError(f"Invalid blob URL path: {parsed.path}")
-
-            # URL-decode the blob name to handle spaces (%20) and special chars
-            return path_parts[0], unquote(path_parts[1])
-
-        except BlobServiceError:
-            raise
-        except Exception as e:
-            raise BlobServiceError(f"Failed to parse blob URL: {e}") from e
+        # Use shared utility for consistent parsing
+        parsed = parse_blob_url_components(blob_url)
+        return parsed.container_name, parsed.blob_name
 
     def list_blobs(
         self,

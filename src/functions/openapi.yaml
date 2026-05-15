@@ -1,0 +1,1052 @@
+openapi: 3.1.0
+info:
+  title: Azure Document Intelligence PDF Processing Pipeline API
+  description: |
+    API for processing PDF documents using Azure Document Intelligence.
+
+    ## Features
+    - Automatic PDF splitting into form chunks
+    - Parallel processing with rate-limit handling
+    - Multi-tenant support
+    - Async job processing with status polling
+    - Processing profiles for different form types
+    - Webhook notifications
+
+    ## Authentication
+    All endpoints require a Function Key passed via:
+    - Query parameter: `?code=<function-key>`
+    - Header: `x-functions-key: <function-key>`
+
+    ## API Versioning
+    - Current version: v1
+    - Versioned routes: `/api/v1/process`, `/api/v2/process`
+    - Unversioned routes default to current version
+  version: 2.0.0
+  contact:
+    name: Document Processing Team
+  license:
+    name: MIT
+
+servers:
+  - url: https://{functionAppName}.azurewebsites.net/api
+    description: Azure Function App
+    variables:
+      functionAppName:
+        default: your-function-app
+        description: Your Azure Function App name
+  - url: http://localhost:7071/api
+    description: Local development
+
+tags:
+  - name: Document Processing
+    description: Core document processing endpoints
+  - name: Status & Monitoring
+    description: Status checks and health monitoring
+  - name: Jobs
+    description: Async job management
+  - name: Configuration
+    description: API configuration and profiles
+  - name: Tenant Management
+    description: Multi-tenant document operations
+  - name: Batch Operations
+    description: Bulk document processing
+
+paths:
+  /process:
+    post:
+      operationId: processDocument
+      summary: Process a PDF document
+      description: |
+        Process a PDF document through Azure Document Intelligence.
+        Multi-page PDFs are automatically split into 2-page form chunks.
+      tags:
+        - Document Processing
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProcessDocumentRequest'
+            examples:
+              basic:
+                summary: Basic processing
+                value:
+                  blobUrl: "https://storage.blob.core.windows.net/pdfs/document.pdf"
+                  blobName: "incoming/document.pdf"
+              with-model:
+                summary: With custom model
+                value:
+                  blobUrl: "https://storage.blob.core.windows.net/pdfs/invoice.pdf"
+                  blobName: "incoming/invoice.pdf"
+                  modelId: "custom-invoice-model"
+                  webhookUrl: "https://api.example.com/webhooks/doc-complete"
+      responses:
+        '200':
+          description: Document processed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProcessDocumentResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Processing error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/process:
+    post:
+      operationId: processDocumentV1
+      summary: Process a PDF document (API v1)
+      description: Versioned endpoint for document processing. Same as /process.
+      tags:
+        - Document Processing
+      requestBody:
+        $ref: '#/paths/~1process/post/requestBody'
+      responses:
+        $ref: '#/paths/~1process/post/responses'
+
+  /reprocess/{blob_name}:
+    post:
+      operationId: reprocessDocument
+      summary: Reprocess a failed document
+      description: Retry processing for a document that previously failed.
+      tags:
+        - Document Processing
+      parameters:
+        - name: blob_name
+          in: path
+          required: true
+          description: URL-encoded blob path
+          schema:
+            type: string
+          example: "incoming%2Fdocument.pdf"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReprocessRequest'
+      responses:
+        '200':
+          description: Document reprocessed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProcessDocumentResponse'
+        '404':
+          description: Document not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /status/{blob_name}:
+    get:
+      operationId: getDocumentStatus
+      summary: Get document processing status
+      description: Get the current processing status for a document.
+      tags:
+        - Status & Monitoring
+      parameters:
+        - name: blob_name
+          in: path
+          required: true
+          description: URL-encoded blob path
+          schema:
+            type: string
+          example: "incoming%2Fdocument.pdf"
+      responses:
+        '200':
+          description: Status retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentStatusResponse'
+        '404':
+          description: Document not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /status/batch/{blob_name}:
+    get:
+      operationId: getBatchStatus
+      summary: Get batch processing status
+      description: Get status of all forms from a multi-page PDF.
+      tags:
+        - Status & Monitoring
+      parameters:
+        - name: blob_name
+          in: path
+          required: true
+          description: URL-encoded blob path of the original PDF
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Batch status retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BatchStatusResponse'
+        '404':
+          description: No documents found for this source file
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /documents/{blob_name}:
+    delete:
+      operationId: deleteDocument
+      summary: Delete processed documents
+      description: |
+        Delete processed documents from Cosmos DB and optionally delete
+        split PDFs and original files from blob storage.
+      tags:
+        - Document Processing
+      parameters:
+        - name: blob_name
+          in: path
+          required: true
+          description: URL-encoded blob path
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeleteDocumentRequest'
+      responses:
+        '200':
+          description: Documents deleted successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeleteDocumentResponse'
+
+  /batch:
+    post:
+      operationId: batchProcess
+      summary: Process multiple PDFs
+      description: Process multiple PDFs in a single request (max 50 blobs).
+      tags:
+        - Batch Operations
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BatchProcessRequest'
+      responses:
+        '200':
+          description: Batch processing completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BatchProcessResponse'
+
+  /process-multi:
+    post:
+      operationId: processMultiModel
+      summary: Process PDF with multiple models
+      description: Process different page ranges with different Document Intelligence models.
+      tags:
+        - Document Processing
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MultiModelRequest'
+            example:
+              blobUrl: "https://storage.blob.core.windows.net/pdfs/mixed-forms.pdf"
+              blobName: "incoming/mixed-forms.pdf"
+              modelMapping:
+                "1-2": "invoice-model"
+                "3-4": "receipt-model"
+      responses:
+        '200':
+          description: Multi-model processing completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProcessDocumentResponse'
+
+  /estimate-cost:
+    post:
+      operationId: estimateCost
+      summary: Estimate processing costs
+      description: Estimate Document Intelligence processing costs before running extraction.
+      tags:
+        - Configuration
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CostEstimateRequest'
+      responses:
+        '200':
+          description: Cost estimate calculated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CostEstimateResponse'
+
+  /jobs:
+    post:
+      operationId: submitJob
+      summary: Submit async processing job
+      description: Submit a document for asynchronous processing via queue.
+      tags:
+        - Jobs
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProcessDocumentRequest'
+      responses:
+        '202':
+          description: Job submitted successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobSubmitResponse'
+    get:
+      operationId: listJobs
+      summary: List processing jobs
+      description: List processing jobs with optional status filter.
+      tags:
+        - Jobs
+      parameters:
+        - name: status
+          in: query
+          description: Filter by job status
+          schema:
+            type: string
+            enum: [pending, processing, completed, failed]
+        - name: limit
+          in: query
+          description: Maximum number of jobs to return
+          schema:
+            type: integer
+            default: 50
+            maximum: 100
+      responses:
+        '200':
+          description: Jobs retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobListResponse'
+
+  /jobs/{job_id}:
+    get:
+      operationId: getJobStatus
+      summary: Get job status
+      description: Get the status of a specific processing job.
+      tags:
+        - Jobs
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          description: Job ID returned from submit
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Job status retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobStatusResponse'
+        '404':
+          description: Job not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /tenants/{tenant_id}/documents:
+    get:
+      operationId: getTenantDocuments
+      summary: Get tenant documents
+      description: Get all documents for a specific tenant (requires multi-tenant mode).
+      tags:
+        - Tenant Management
+      parameters:
+        - name: tenant_id
+          in: path
+          required: true
+          description: Tenant identifier
+          schema:
+            type: string
+        - name: status
+          in: query
+          description: Filter by processing status
+          schema:
+            type: string
+            enum: [pending, processing, completed, failed, partial]
+        - name: limit
+          in: query
+          description: Maximum documents to return
+          schema:
+            type: integer
+            default: 100
+            maximum: 1000
+      responses:
+        '200':
+          description: Documents retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tenantId:
+                    type: string
+                  documents:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ExtractedDocument'
+                  count:
+                    type: integer
+        '400':
+          description: Multi-tenant mode not enabled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /health:
+    get:
+      operationId: healthCheck
+      summary: Health check
+      description: Get overall service health with dependency status.
+      tags:
+        - Status & Monitoring
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+        '503':
+          description: Service is unhealthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+  /health/live:
+    get:
+      operationId: healthLiveness
+      summary: Liveness probe
+      description: Kubernetes-style liveness probe. Returns 200 if the application is running.
+      tags:
+        - Status & Monitoring
+      responses:
+        '200':
+          description: Application is alive
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "alive"
+                  timestamp:
+                    type: string
+                    format: date-time
+
+  /health/ready:
+    get:
+      operationId: healthReadiness
+      summary: Readiness probe
+      description: |
+        Kubernetes-style readiness probe. Checks if the application is ready to receive traffic.
+        Use `?deep=true` for comprehensive dependency checks.
+      tags:
+        - Status & Monitoring
+      parameters:
+        - name: deep
+          in: query
+          description: Perform deep health checks on dependencies
+          schema:
+            type: boolean
+            default: false
+      responses:
+        '200':
+          description: Application is ready
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "ready"
+                  timestamp:
+                    type: string
+                    format: date-time
+                  checks:
+                    type: object
+                    additionalProperties:
+                      type: string
+        '503':
+          description: Application is not ready
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "not_ready"
+                  checks:
+                    type: object
+
+  /versions:
+    get:
+      operationId: getApiVersions
+      summary: List API versions
+      description: Get available API versions and their status (current, supported, deprecated).
+      tags:
+        - Configuration
+      responses:
+        '200':
+          description: API versions retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  current_version:
+                    type: string
+                    example: "v1"
+                  versions:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        version:
+                          type: string
+                        status:
+                          type: string
+                          enum: [current, supported, deprecated]
+                        sunset_date:
+                          type: string
+                          format: date
+                          nullable: true
+
+  /profiles:
+    get:
+      operationId: listProfiles
+      summary: List processing profiles
+      description: Get available document processing profiles.
+      tags:
+        - Configuration
+      responses:
+        '200':
+          description: Profiles retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  profiles:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ProcessingProfile'
+
+  /profiles/{profile_name}:
+    get:
+      operationId: getProfile
+      summary: Get processing profile
+      description: Get details for a specific processing profile.
+      tags:
+        - Configuration
+      parameters:
+        - name: profile_name
+          in: path
+          required: true
+          description: Profile name
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Profile retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProcessingProfile'
+        '404':
+          description: Profile not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  securitySchemes:
+    functionKey:
+      type: apiKey
+      in: query
+      name: code
+      description: Azure Function Key
+    functionKeyHeader:
+      type: apiKey
+      in: header
+      name: x-functions-key
+      description: Azure Function Key (header)
+
+  schemas:
+    ProcessDocumentRequest:
+      type: object
+      required:
+        - blobUrl
+        - blobName
+      properties:
+        blobUrl:
+          type: string
+          format: uri
+          description: Full URL to the PDF blob (with or without SAS token)
+        blobName:
+          type: string
+          minLength: 1
+          description: Blob path within container (e.g., 'incoming/document.pdf')
+        modelId:
+          type: string
+          description: Document Intelligence model ID (defaults to prebuilt-layout)
+          nullable: true
+        webhookUrl:
+          type: string
+          format: uri
+          description: Optional webhook URL for completion notification
+          nullable: true
+        tenantId:
+          type: string
+          description: Tenant ID for multi-tenant mode
+          nullable: true
+        profile:
+          type: string
+          description: Processing profile name
+          nullable: true
+        pagesPerForm:
+          type: integer
+          minimum: 1
+          description: Override pages per form (default 2)
+          nullable: true
+
+    ReprocessRequest:
+      type: object
+      properties:
+        modelId:
+          type: string
+          description: Override model ID for reprocessing
+          nullable: true
+        force:
+          type: boolean
+          default: false
+          description: Force reprocessing even if status is completed
+        webhookUrl:
+          type: string
+          format: uri
+          description: Optional webhook URL for completion notification
+          nullable: true
+
+    DeleteDocumentRequest:
+      type: object
+      properties:
+        deleteSplits:
+          type: boolean
+          default: true
+          description: Also delete split PDFs from _splits/ folder
+        deleteOriginal:
+          type: boolean
+          default: false
+          description: Also delete original PDF from incoming/ folder
+
+    BatchProcessRequest:
+      type: object
+      required:
+        - blobs
+      properties:
+        blobs:
+          type: array
+          minItems: 1
+          maxItems: 50
+          items:
+            type: object
+            properties:
+              blobUrl:
+                type: string
+                format: uri
+              blobName:
+                type: string
+          description: List of blobs to process
+        modelId:
+          type: string
+          description: Model ID applies to all blobs
+          nullable: true
+        webhookUrl:
+          type: string
+          format: uri
+          nullable: true
+        parallel:
+          type: boolean
+          default: true
+          description: Process blobs in parallel or sequentially
+
+    MultiModelRequest:
+      type: object
+      required:
+        - blobUrl
+        - blobName
+        - modelMapping
+      properties:
+        blobUrl:
+          type: string
+          format: uri
+        blobName:
+          type: string
+        modelMapping:
+          type: object
+          additionalProperties:
+            type: string
+          description: "Mapping of page ranges to model IDs (e.g., {'1-2': 'model-a'})"
+        webhookUrl:
+          type: string
+          format: uri
+          nullable: true
+
+    CostEstimateRequest:
+      type: object
+      properties:
+        blobUrl:
+          type: string
+          format: uri
+          description: URL to PDF for page count estimation
+          nullable: true
+        pageCount:
+          type: integer
+          minimum: 1
+          maximum: 10000
+          description: Manual page count if blobUrl not provided
+          nullable: true
+        modelId:
+          type: string
+          nullable: true
+
+    ProcessDocumentResponse:
+      type: object
+      properties:
+        status:
+          $ref: '#/components/schemas/ProcessingStatus'
+        documentId:
+          type: string
+          nullable: true
+        processedAt:
+          type: string
+          format: date-time
+        formsProcessed:
+          type: integer
+        totalForms:
+          type: integer
+          nullable: true
+        originalPageCount:
+          type: integer
+          nullable: true
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/FormResult'
+          nullable: true
+
+    DocumentStatusResponse:
+      type: object
+      properties:
+        status:
+          $ref: '#/components/schemas/ProcessingStatus'
+        documentId:
+          type: string
+        sourceFile:
+          type: string
+        processedAt:
+          type: string
+          format: date-time
+          nullable: true
+        formNumber:
+          type: integer
+          nullable: true
+        totalForms:
+          type: integer
+          nullable: true
+
+    BatchStatusResponse:
+      type: object
+      properties:
+        sourceFile:
+          type: string
+        totalForms:
+          type: integer
+        completed:
+          type: integer
+        failed:
+          type: integer
+        pending:
+          type: integer
+        documents:
+          type: array
+          items:
+            $ref: '#/components/schemas/DocumentStatusResponse'
+
+    DeleteDocumentResponse:
+      type: object
+      properties:
+        status:
+          type: string
+        deletedDocuments:
+          type: integer
+        deletedBlobs:
+          type: integer
+        errors:
+          type: array
+          items:
+            type: string
+
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [healthy, degraded, unhealthy]
+        timestamp:
+          type: string
+          format: date-time
+        version:
+          type: string
+        services:
+          type: object
+          additionalProperties:
+            type: string
+        blobTrigger:
+          type: object
+          nullable: true
+
+    CostEstimateResponse:
+      type: object
+      properties:
+        pageCount:
+          type: integer
+        formsCount:
+          type: integer
+        modelType:
+          type: string
+        pricing:
+          type: object
+        estimatedCostUsd:
+          type: number
+          format: float
+        notes:
+          type: array
+          items:
+            type: string
+
+    BatchProcessResponse:
+      type: object
+      properties:
+        status:
+          type: string
+        batchId:
+          type: string
+        totalBlobs:
+          type: integer
+        processed:
+          type: integer
+        failed:
+          type: integer
+        results:
+          type: array
+          items:
+            type: object
+
+    JobSubmitResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: "accepted"
+        jobId:
+          type: string
+          format: uuid
+        message:
+          type: string
+        statusUrl:
+          type: string
+          format: uri
+
+    JobStatusResponse:
+      type: object
+      properties:
+        jobId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [pending, processing, completed, failed]
+        createdAt:
+          type: string
+          format: date-time
+        startedAt:
+          type: string
+          format: date-time
+          nullable: true
+        completedAt:
+          type: string
+          format: date-time
+          nullable: true
+        result:
+          type: object
+          nullable: true
+        error:
+          type: string
+          nullable: true
+
+    JobListResponse:
+      type: object
+      properties:
+        jobs:
+          type: array
+          items:
+            $ref: '#/components/schemas/JobStatusResponse'
+        count:
+          type: integer
+
+    FormResult:
+      type: object
+      properties:
+        formNumber:
+          type: integer
+        documentId:
+          type: string
+        pageRange:
+          type: string
+        status:
+          $ref: '#/components/schemas/ProcessingStatus'
+        error:
+          type: string
+          nullable: true
+
+    ProcessingStatus:
+      type: string
+      enum:
+        - pending
+        - processing
+        - completed
+        - failed
+        - partial
+
+    ExtractedDocument:
+      type: object
+      properties:
+        id:
+          type: string
+        sourceFile:
+          type: string
+        processedPdfUrl:
+          type: string
+          nullable: true
+        processedAt:
+          type: string
+          format: date-time
+        formNumber:
+          type: integer
+        totalForms:
+          type: integer
+        pageRange:
+          type: string
+          nullable: true
+        originalPageCount:
+          type: integer
+          nullable: true
+        modelId:
+          type: string
+        modelConfidence:
+          type: number
+          nullable: true
+        docType:
+          type: string
+          nullable: true
+        fields:
+          type: object
+          additionalProperties: true
+        confidence:
+          type: object
+          additionalProperties:
+            type: number
+        status:
+          $ref: '#/components/schemas/ProcessingStatus'
+        error:
+          type: string
+          nullable: true
+        retryCount:
+          type: integer
+
+    ProcessingProfile:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        modelId:
+          type: string
+        pagesPerForm:
+          type: integer
+        confidenceThreshold:
+          type: number
+        requiredFields:
+          type: array
+          items:
+            type: string
+        validations:
+          type: array
+          items:
+            type: object
+
+    ErrorResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: "error"
+        error:
+          type: string
+          description: Error message
+        details:
+          type: object
+          nullable: true
+          additionalProperties: true
+
+security:
+  - functionKey: []
+  - functionKeyHeader: []

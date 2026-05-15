@@ -3,13 +3,21 @@
 HTTP triggers for document processing with Document Intelligence.
 Supports automatic splitting of multi-page PDFs into 2-page form chunks.
 
+API Versioning:
+- All endpoints support versioned routes: /api/v1/process, /api/v2/process, etc.
+- Unversioned routes (e.g., /api/process) default to the current version (v1)
+- Deprecated versions return Sunset and Deprecation headers
+
 Endpoints:
-- POST /api/process - Process a PDF document
+- GET /api/versions - List available API versions
+- POST /api/process - Process a PDF document (also /api/v1/process)
 - POST /api/reprocess/{blob_name} - Reprocess a failed document
 - GET /api/status/{blob_name} - Get processing status for a document
 - GET /api/status/batch/{blob_name} - Get all forms from a multi-page PDF
 - DELETE /api/documents/{blob_name} - Delete processed documents and split PDFs
-- GET /api/health - Health check endpoint
+- GET /api/health - Health check endpoint with service status
+- GET /api/health/live - Kubernetes-style liveness probe
+- GET /api/health/ready - Kubernetes-style readiness probe (with optional ?deep=true)
 - Blob trigger - Auto-process PDFs uploaded to incoming/
 """
 
@@ -24,21 +32,34 @@ import azure.functions as func
 
 from config import ConfigurationError, get_config
 from services import (
+    CURRENT_VERSION,
+    MAX_BLOB_SIZE_BYTES,
     PROCESSING_VERSION,
+    SUPPORTED_VERSIONS,
+    DeadLetterStatus,
     JobStatus,
+    add_version_headers,
     check_and_generate_idempotency,
     create_idempotent_document,
     create_profile_from_request,
+    extract_version_from_route,
     generate_content_hash,
+    get_api_versions_info,
     get_blob_service,
     get_cosmos_service,
+    get_dead_letter_queue_service,
     get_document_service,
     get_job_service,
     get_pdf_service,
     get_profile,
     get_telemetry_service,
     get_webhook_service,
+    is_version_supported,
     list_profiles,
+    sanitize_blob_url,
+    validate_blob_name,
+    versioned_error_response,
+    versioned_response,
 )
 from services.blob_service import BlobServiceError
 from services.cosmos_service import CosmosError
@@ -83,6 +104,36 @@ def create_error_response(
     )
 
 
+# Maximum request body size (10 MB for JSON requests)
+MAX_REQUEST_BODY_SIZE = 10 * 1024 * 1024
+
+
+def validate_request_size(
+    req: func.HttpRequest, api_version: str = CURRENT_VERSION
+) -> func.HttpResponse | None:
+    """Validate request body size to prevent DoS attacks.
+
+    Args:
+        req: HTTP request to validate.
+        api_version: API version for error response formatting.
+
+    Returns:
+        Error response if request is too large, None if valid.
+    """
+    try:
+        body = req.get_body()
+        if len(body) > MAX_REQUEST_BODY_SIZE:
+            return versioned_error_response(
+                f"Request body too large. Maximum size is {MAX_REQUEST_BODY_SIZE // (1024 * 1024)} MB",
+                version=api_version,
+                status_code=413,
+                details={"maxSizeBytes": MAX_REQUEST_BODY_SIZE, "receivedSizeBytes": len(body)},
+            )
+    except Exception:
+        pass  # If we can't read body, let the handler deal with it
+    return None
+
+
 def get_tenant_id(request_tenant_id: str | None = None) -> str:
     """Get tenant ID from request or use default.
 
@@ -96,6 +147,396 @@ def get_tenant_id(request_tenant_id: str | None = None) -> str:
     if request_tenant_id:
         return request_tenant_id
     return config.default_tenant_id
+
+
+async def _check_idempotency(
+    cosmos_service: Any,
+    blob_name: str,
+    model_id: str,
+    pages_per_form: int,
+    content_hash: str,
+    skip_check: bool = False,
+) -> tuple[bool, str, dict[str, Any] | None]:
+    """Check for duplicate processing and generate idempotency key.
+
+    Args:
+        cosmos_service: Cosmos DB service instance.
+        blob_name: Blob path within container.
+        model_id: Document Intelligence model ID.
+        pages_per_form: Pages per form for processing.
+        content_hash: Hash of PDF content.
+        skip_check: Skip duplicate checking (for reprocessing).
+
+    Returns:
+        Tuple of (is_duplicate, idempotency_key, cached_result).
+        If is_duplicate is True, cached_result contains the existing document info.
+    """
+    if not skip_check:
+        idempotency_result = await check_and_generate_idempotency(
+            cosmos_service=cosmos_service,
+            blob_name=blob_name,
+            model_id=model_id,
+            pages_per_form=pages_per_form,
+            content_hash=content_hash,
+        )
+
+        if idempotency_result.is_duplicate:
+            existing_doc = idempotency_result.existing_document
+            return (
+                True,
+                idempotency_result.idempotency_key,
+                {
+                    "status": "duplicate",
+                    "message": "Document already processed with same parameters",
+                    "documentId": existing_doc.get("id") if existing_doc else None,
+                    "processedAt": existing_doc.get("processedAt") if existing_doc else None,
+                    "idempotencyKey": idempotency_result.idempotency_key,
+                    "cached": True,
+                },
+            )
+
+        return False, idempotency_result.idempotency_key, None
+
+    # Generate key for storing in document (skip check mode)
+    from services.idempotency import generate_idempotency_key
+
+    idempotency_key = generate_idempotency_key(
+        blob_name=blob_name,
+        model_id=model_id,
+        pages_per_form=pages_per_form,
+        content_hash=content_hash,
+    )
+    return False, idempotency_key, None
+
+
+async def _process_single_form(
+    blob_url: str,
+    blob_name: str,
+    model_id: str,
+    page_count: int,
+    pages_per_form: int,
+    profile_name: str | None,
+    idempotency_key: str,
+    content_hash: str,
+    resolved_tenant_id: str | None,
+    processed_at: str,
+) -> tuple[str, dict[str, Any]]:
+    """Process a single-form PDF (no splitting needed).
+
+    Args:
+        blob_url: URL to the PDF blob.
+        blob_name: Blob path within container.
+        model_id: Document Intelligence model ID.
+        page_count: Number of pages in the PDF.
+        pages_per_form: Pages per form setting.
+        profile_name: Name of the processing profile.
+        idempotency_key: Key for idempotency tracking.
+        content_hash: Hash of PDF content.
+        resolved_tenant_id: Tenant ID if multi-tenant enabled.
+        processed_at: ISO timestamp for processing.
+
+    Returns:
+        Tuple of (document_id, result_dict).
+    """
+    blob_service = get_blob_service()
+    cosmos_service = get_cosmos_service()
+    doc_service = get_document_service()
+    telemetry = get_telemetry_service()
+
+    logger.info("No splitting needed, processing as single form")
+
+    with telemetry.track_operation("process_form", model_id) as op:
+        url_with_sas = blob_service.generate_sas_url(blob_url)
+        analysis_result = await doc_service.analyze_document(
+            blob_url=url_with_sas,
+            model_id=model_id,
+            blob_name=blob_name,
+        )
+
+        doc_id = blob_name.replace("/", "_").replace(".", "_")
+        document = {
+            "id": doc_id,
+            "sourceFile": blob_name,
+            "processedPdfUrl": blob_url,
+            "processedAt": processed_at,
+            "formNumber": 1,
+            "totalForms": 1,
+            "profileName": profile_name,
+            "pagesPerForm": pages_per_form,
+            "idempotencyKey": idempotency_key,
+            "contentHash": content_hash,
+            "processingVersion": PROCESSING_VERSION,
+            **analysis_result,
+        }
+
+        # Add tenant ID if multi-tenant is enabled
+        if resolved_tenant_id:
+            document["tenantId"] = resolved_tenant_id
+
+        await cosmos_service.save_document_result(document)
+
+        op["status"] = "completed"
+        op["confidence"] = analysis_result.get("modelConfidence")
+        op["page_count"] = page_count
+
+    return doc_id, {
+        "status": "success",
+        "documentId": doc_id,
+        "processedAt": processed_at,
+        "formsProcessed": 1,
+    }
+
+
+async def _process_form_chunk(
+    form_num: int,
+    chunk_bytes: bytes,
+    start_page: int,
+    end_page: int,
+    total_forms: int,
+    blob_name: str,
+    base_name: str,
+    container_name: str,
+    model_id: str,
+    page_count: int,
+    pages_per_form: int,
+    profile_name: str | None,
+    idempotency_key: str,
+    content_hash: str,
+    resolved_tenant_id: str | None,
+    processed_at: str,
+    semaphore: asyncio.Semaphore,
+) -> dict[str, Any]:
+    """Process a single form chunk from a split PDF.
+
+    Args:
+        form_num: Form number (1-indexed).
+        chunk_bytes: PDF bytes for this chunk.
+        start_page: Starting page number.
+        end_page: Ending page number.
+        total_forms: Total number of forms in the PDF.
+        blob_name: Original blob path.
+        base_name: Base name for split files.
+        container_name: Storage container name.
+        model_id: Document Intelligence model ID.
+        page_count: Original PDF page count.
+        pages_per_form: Pages per form setting.
+        profile_name: Name of the processing profile.
+        idempotency_key: Key for idempotency tracking.
+        content_hash: Hash of PDF content.
+        resolved_tenant_id: Tenant ID if multi-tenant enabled.
+        processed_at: ISO timestamp for processing.
+        semaphore: Concurrency control semaphore.
+
+    Returns:
+        Result dict with formNumber, documentId, pageRange, status.
+    """
+    blob_service = get_blob_service()
+    cosmos_service = get_cosmos_service()
+    doc_service = get_document_service()
+    telemetry = get_telemetry_service()
+
+    async with semaphore:
+        chunk_blob_name = f"{base_name}_form{form_num}_pages{start_page}-{end_page}.pdf"
+        split_blob_path = f"_splits/{chunk_blob_name}"
+
+        logger.info(f"Processing form {form_num}/{total_forms}: pages {start_page}-{end_page}")
+
+        try:
+            with telemetry.track_operation("process_form", model_id) as op:
+                # Upload split PDF
+                chunk_url = blob_service.upload_blob(
+                    container_name=container_name,
+                    blob_name=split_blob_path,
+                    content=chunk_bytes,
+                )
+
+                # Generate SAS and process
+                chunk_sas_url = blob_service.generate_sas_url(chunk_url)
+                analysis_result = await doc_service.analyze_document(
+                    blob_url=chunk_sas_url,
+                    model_id=model_id,
+                    blob_name=f"{blob_name} (form {form_num}, pages {start_page}-{end_page})",
+                )
+
+                # Create document ID for this form
+                doc_id = f"{blob_name.replace('/', '_').replace('.', '_')}_form{form_num}"
+
+                document = {
+                    "id": doc_id,
+                    "sourceFile": blob_name,
+                    "processedPdfUrl": chunk_url,
+                    "processedAt": processed_at,
+                    "formNumber": form_num,
+                    "totalForms": total_forms,
+                    "pageRange": f"{start_page}-{end_page}",
+                    "originalPageCount": page_count,
+                    "profileName": profile_name,
+                    "pagesPerForm": pages_per_form,
+                    "idempotencyKey": idempotency_key,
+                    "contentHash": content_hash,
+                    "processingVersion": PROCESSING_VERSION,
+                    **analysis_result,
+                }
+
+                # Add tenant ID if multi-tenant is enabled
+                if resolved_tenant_id:
+                    document["tenantId"] = resolved_tenant_id
+
+                await cosmos_service.save_document_result(document)
+
+                op["status"] = "completed"
+                op["confidence"] = analysis_result.get("modelConfidence")
+                op["page_count"] = end_page - start_page + 1
+
+                logger.info(f"Successfully processed form {form_num}")
+                return {
+                    "formNumber": form_num,
+                    "documentId": doc_id,
+                    "pageRange": f"{start_page}-{end_page}",
+                    "status": "success",
+                }
+
+        except (DocumentProcessingError, RateLimitError) as e:
+            logger.error(f"Failed to process form {form_num}: {e}")
+            telemetry.track_form_processed(
+                model_id=model_id,
+                status="failed",
+                page_count=end_page - start_page + 1,
+            )
+            return {
+                "formNumber": form_num,
+                "pageRange": f"{start_page}-{end_page}",
+                "status": "failed",
+                "error": str(e),
+            }
+
+
+async def _process_multi_form(
+    pdf_content: bytes,
+    blob_url: str,
+    blob_name: str,
+    model_id: str,
+    pages_per_form: int,
+    profile_name: str | None,
+    idempotency_key: str,
+    content_hash: str,
+    resolved_tenant_id: str | None,
+    processed_at: str,
+    auto_detect_forms: bool,
+) -> tuple[list[str], list[dict[str, Any]], int]:
+    """Process a multi-form PDF by splitting and processing chunks.
+
+    Args:
+        pdf_content: Raw PDF bytes.
+        blob_url: URL to the PDF blob.
+        blob_name: Blob path within container.
+        model_id: Document Intelligence model ID.
+        pages_per_form: Pages per form setting.
+        profile_name: Name of the processing profile.
+        idempotency_key: Key for idempotency tracking.
+        content_hash: Hash of PDF content.
+        resolved_tenant_id: Tenant ID if multi-tenant enabled.
+        processed_at: ISO timestamp for processing.
+        auto_detect_forms: Use smart form boundary detection.
+
+    Returns:
+        Tuple of (document_ids, results, page_count).
+    """
+    config = get_config()
+    blob_service = get_blob_service()
+    pdf_service = get_pdf_service(pages_per_form=pages_per_form)
+
+    page_count = pdf_service.get_page_count(pdf_content)
+
+    # Parse original blob info
+    container_name, original_blob_path = blob_service.parse_blob_url(blob_url)
+    base_name = original_blob_path.rsplit(".", 1)[0]
+
+    # Split PDF - use smart detection or fixed pages
+    if auto_detect_forms:
+        logger.info(f"Using smart form boundary detection for {page_count}-page PDF")
+        smart_chunks = pdf_service.split_pdf_smart(pdf_content, auto_detect=True)
+        # Convert to standard format (drop confidence for now, keep for logging)
+        chunks = [(c[0], c[1], c[2]) for c in smart_chunks]
+        avg_confidence = (
+            sum(c[3] for c in smart_chunks) / len(smart_chunks) if smart_chunks else 1.0
+        )
+        logger.info(
+            f"Smart detection found {len(chunks)} forms (avg confidence: {avg_confidence:.2f})"
+        )
+    else:
+        logger.info(f"Splitting {page_count}-page PDF into {pages_per_form}-page forms")
+        chunks = pdf_service.split_pdf(pdf_content)
+
+    total_forms = len(chunks)
+    logger.info(f"Split into {total_forms} forms")
+
+    # Process form chunks in parallel (limit concurrency to avoid rate limits)
+    semaphore = asyncio.Semaphore(config.concurrent_doc_intel_calls)
+
+    # Create tasks for all forms
+    tasks = [
+        _process_form_chunk(
+            form_num=form_num,
+            chunk_bytes=chunk_bytes,
+            start_page=start_page,
+            end_page=end_page,
+            total_forms=total_forms,
+            blob_name=blob_name,
+            base_name=base_name,
+            container_name=container_name,
+            model_id=model_id,
+            page_count=page_count,
+            pages_per_form=pages_per_form,
+            profile_name=profile_name,
+            idempotency_key=idempotency_key,
+            content_hash=content_hash,
+            resolved_tenant_id=resolved_tenant_id,
+            processed_at=processed_at,
+            semaphore=semaphore,
+        )
+        for form_num, (chunk_bytes, start_page, end_page) in enumerate(chunks, start=1)
+    ]
+
+    # Process all forms in parallel
+    results = await asyncio.gather(*tasks)
+
+    # Collect document IDs from successful results
+    document_ids = [r["documentId"] for r in results if r["status"] == "success"]
+
+    return document_ids, list(results), page_count
+
+
+async def _notify_completion(
+    blob_name: str,
+    status: str,
+    forms_processed: int,
+    total_forms: int,
+    document_ids: list[str],
+    webhook_url: str | None,
+) -> None:
+    """Send webhook notification for processing completion.
+
+    Args:
+        blob_name: Source file name.
+        status: Processing status (success, partial, failed).
+        forms_processed: Number of successfully processed forms.
+        total_forms: Total number of forms.
+        document_ids: List of created document IDs.
+        webhook_url: Override webhook URL (uses config default if None).
+    """
+    config = get_config()
+    webhook_service = get_webhook_service()
+
+    if webhook_url or config.webhook_url:
+        await webhook_service.notify_processing_complete(
+            source_file=blob_name,
+            status=status,
+            forms_processed=forms_processed,
+            total_forms=total_forms,
+            document_ids=document_ids,
+            webhook_url=webhook_url,
+        )
 
 
 async def process_pdf_internal(
@@ -136,7 +577,6 @@ async def process_pdf_internal(
     """
     config = get_config()
     blob_service = get_blob_service()
-    telemetry = get_telemetry_service()
     cosmos_service = get_cosmos_service()
 
     # Resolve tenant ID (use provided or default)
@@ -151,242 +591,85 @@ async def process_pdf_internal(
 
     # Generate content hash for idempotency
     content_hash = generate_content_hash(pdf_content)
-
-    # Check idempotency unless explicitly skipped
-    if not skip_idempotency_check:
-        idempotency_result = await check_and_generate_idempotency(
-            cosmos_service=cosmos_service,
-            blob_name=blob_name,
-            model_id=model_id,
-            pages_per_form=pages_per_form_override or config.pages_per_form,
-            content_hash=content_hash,
-        )
-
-        if idempotency_result.is_duplicate:
-            logger.info(f"Duplicate processing detected for {blob_name}, returning cached result")
-            existing_doc = idempotency_result.existing_document
-            return {
-                "status": "duplicate",
-                "message": "Document already processed with same parameters",
-                "documentId": existing_doc.get("id") if existing_doc else None,
-                "processedAt": existing_doc.get("processedAt") if existing_doc else None,
-                "idempotencyKey": idempotency_result.idempotency_key,
-                "cached": True,
-            }
-
-        idempotency_key = idempotency_result.idempotency_key
-    else:
-        # Generate key anyway for storing in document
-        from services.idempotency import generate_idempotency_key
-
-        idempotency_key = generate_idempotency_key(
-            blob_name=blob_name,
-            model_id=model_id,
-            pages_per_form=pages_per_form_override or config.pages_per_form,
-            content_hash=content_hash,
-        )
-
-    # Check if PDF needs splitting - use override if provided
     pages_per_form = pages_per_form_override or config.pages_per_form
+
+    # Check idempotency
+    is_duplicate, idempotency_key, cached_result = await _check_idempotency(
+        cosmos_service=cosmos_service,
+        blob_name=blob_name,
+        model_id=model_id,
+        pages_per_form=pages_per_form,
+        content_hash=content_hash,
+        skip_check=skip_idempotency_check,
+    )
+
+    if is_duplicate and cached_result:
+        logger.info(f"Duplicate processing detected for {blob_name}, returning cached result")
+        return cached_result
+
+    # Check if PDF needs splitting
     pdf_service = get_pdf_service(pages_per_form=pages_per_form)
     page_count = pdf_service.get_page_count(pdf_content)
     logger.info(f"PDF has {page_count} pages")
 
-    # Parse original blob info
-    container_name, original_blob_path = blob_service.parse_blob_url(blob_url)
-    base_name = original_blob_path.rsplit(".", 1)[0]
-
     processed_at = datetime.now(timezone.utc).isoformat()
-    doc_service = get_document_service()
-    webhook_service = get_webhook_service()
-
-    document_ids: list[str] = []
 
     if page_count <= pages_per_form:
         # No splitting needed - process as single document
-        logger.info("No splitting needed, processing as single form")
-
-        with telemetry.track_operation("process_form", model_id) as op:
-            url_with_sas = blob_service.generate_sas_url(blob_url)
-            analysis_result = await doc_service.analyze_document(
-                blob_url=url_with_sas,
-                model_id=model_id,
-                blob_name=blob_name,
-            )
-
-            doc_id = blob_name.replace("/", "_").replace(".", "_")
-            document = {
-                "id": doc_id,
-                "sourceFile": blob_name,
-                "processedPdfUrl": blob_url,
-                "processedAt": processed_at,
-                "formNumber": 1,
-                "totalForms": 1,
-                "profileName": profile_name,
-                "pagesPerForm": pages_per_form,
-                "idempotencyKey": idempotency_key,
-                "contentHash": content_hash,
-                "processingVersion": PROCESSING_VERSION,
-                **analysis_result,
-            }
-
-            # Add tenant ID if multi-tenant is enabled
-            if resolved_tenant_id:
-                document["tenantId"] = resolved_tenant_id
-
-            await cosmos_service.save_document_result(document)
-            document_ids.append(doc_id)
-
-            op["status"] = "completed"
-            op["confidence"] = analysis_result.get("modelConfidence")
-            op["page_count"] = page_count
+        doc_id, result = await _process_single_form(
+            blob_url=blob_url,
+            blob_name=blob_name,
+            model_id=model_id,
+            page_count=page_count,
+            pages_per_form=pages_per_form,
+            profile_name=profile_name,
+            idempotency_key=idempotency_key,
+            content_hash=content_hash,
+            resolved_tenant_id=resolved_tenant_id,
+            processed_at=processed_at,
+        )
 
         # Send webhook notification
-        if webhook_url or config.webhook_url:
-            await webhook_service.notify_processing_complete(
-                source_file=blob_name,
-                status="completed",
-                forms_processed=1,
-                total_forms=1,
-                document_ids=document_ids,
-                webhook_url=webhook_url,
-            )
+        await _notify_completion(
+            blob_name=blob_name,
+            status="completed",
+            forms_processed=1,
+            total_forms=1,
+            document_ids=[doc_id],
+            webhook_url=webhook_url,
+        )
 
-        return {
-            "status": "success",
-            "documentId": doc_id,
-            "processedAt": processed_at,
-            "formsProcessed": 1,
-        }
+        return result
 
-    # Split PDF - use smart detection or fixed pages
-    if auto_detect_forms:
-        logger.info(f"Using smart form boundary detection for {page_count}-page PDF")
-        smart_chunks = pdf_service.split_pdf_smart(pdf_content, auto_detect=True)
-        # Convert to standard format (drop confidence for now, keep for logging)
-        chunks = [(c[0], c[1], c[2]) for c in smart_chunks]
-        avg_confidence = sum(c[3] for c in smart_chunks) / len(smart_chunks) if smart_chunks else 1.0
-        logger.info(f"Smart detection found {len(chunks)} forms (avg confidence: {avg_confidence:.2f})")
-    else:
-        logger.info(f"Splitting {page_count}-page PDF into {pages_per_form}-page forms")
-        chunks = pdf_service.split_pdf(pdf_content)
-    total_forms = len(chunks)
+    # Multi-form processing with splitting
+    document_ids, results, page_count = await _process_multi_form(
+        pdf_content=pdf_content,
+        blob_url=blob_url,
+        blob_name=blob_name,
+        model_id=model_id,
+        pages_per_form=pages_per_form,
+        profile_name=profile_name,
+        idempotency_key=idempotency_key,
+        content_hash=content_hash,
+        resolved_tenant_id=resolved_tenant_id,
+        processed_at=processed_at,
+        auto_detect_forms=auto_detect_forms,
+    )
 
-    logger.info(f"Split into {total_forms} forms")
-
-    # Process form chunks in parallel (limit concurrency to avoid rate limits)
-    semaphore = asyncio.Semaphore(config.concurrent_doc_intel_calls)
-
-    async def process_form(
-        form_num: int,
-        chunk_bytes: bytes,
-        start_page: int,
-        end_page: int,
-    ) -> dict[str, Any]:
-        """Process a single form chunk."""
-        async with semaphore:
-            chunk_blob_name = f"{base_name}_form{form_num}_pages{start_page}-{end_page}.pdf"
-            split_blob_path = f"_splits/{chunk_blob_name}"
-
-            logger.info(f"Processing form {form_num}/{total_forms}: pages {start_page}-{end_page}")
-
-            try:
-                with telemetry.track_operation("process_form", model_id) as op:
-                    # Upload split PDF
-                    chunk_url = blob_service.upload_blob(
-                        container_name=container_name,
-                        blob_name=split_blob_path,
-                        content=chunk_bytes,
-                    )
-
-                    # Generate SAS and process
-                    chunk_sas_url = blob_service.generate_sas_url(chunk_url)
-                    analysis_result = await doc_service.analyze_document(
-                        blob_url=chunk_sas_url,
-                        model_id=model_id,
-                        blob_name=f"{blob_name} (form {form_num}, pages {start_page}-{end_page})",
-                    )
-
-                    # Create document ID for this form
-                    doc_id = f"{blob_name.replace('/', '_').replace('.', '_')}_form{form_num}"
-
-                    document = {
-                        "id": doc_id,
-                        "sourceFile": blob_name,
-                        "processedPdfUrl": chunk_url,
-                        "processedAt": processed_at,
-                        "formNumber": form_num,
-                        "totalForms": total_forms,
-                        "pageRange": f"{start_page}-{end_page}",
-                        "originalPageCount": page_count,
-                        "profileName": profile_name,
-                        "pagesPerForm": pages_per_form,
-                        "idempotencyKey": idempotency_key,
-                        "contentHash": content_hash,
-                        "processingVersion": PROCESSING_VERSION,
-                        **analysis_result,
-                    }
-
-                    # Add tenant ID if multi-tenant is enabled
-                    if resolved_tenant_id:
-                        document["tenantId"] = resolved_tenant_id
-
-                    await cosmos_service.save_document_result(document)
-
-                    op["status"] = "completed"
-                    op["confidence"] = analysis_result.get("modelConfidence")
-                    op["page_count"] = end_page - start_page + 1
-
-                    logger.info(f"Successfully processed form {form_num}")
-                    return {
-                        "formNumber": form_num,
-                        "documentId": doc_id,
-                        "pageRange": f"{start_page}-{end_page}",
-                        "status": "success",
-                    }
-
-            except (DocumentProcessingError, RateLimitError) as e:
-                logger.error(f"Failed to process form {form_num}: {e}")
-                telemetry.track_form_processed(
-                    model_id=model_id,
-                    status="failed",
-                    page_count=end_page - start_page + 1,
-                )
-                return {
-                    "formNumber": form_num,
-                    "pageRange": f"{start_page}-{end_page}",
-                    "status": "failed",
-                    "error": str(e),
-                }
-
-    # Create tasks for all forms
-    tasks = [
-        process_form(form_num, chunk_bytes, start_page, end_page)
-        for form_num, (chunk_bytes, start_page, end_page) in enumerate(chunks, start=1)
-    ]
-
-    # Process all forms in parallel
-    results = await asyncio.gather(*tasks)
-
-    # Count successes and collect document IDs
-    successful = 0
-    for r in results:
-        if r["status"] == "success":
-            successful += 1
-            document_ids.append(r["documentId"])
-
+    # Calculate overall status
+    successful = len(document_ids)
+    total_forms = len(results)
     status = "success" if successful == total_forms else "partial"
 
     # Send webhook notification
-    if webhook_url or config.webhook_url:
-        await webhook_service.notify_processing_complete(
-            source_file=blob_name,
-            status=status,
-            forms_processed=successful,
-            total_forms=total_forms,
-            document_ids=document_ids,
-            webhook_url=webhook_url,
-        )
+    await _notify_completion(
+        blob_name=blob_name,
+        status=status,
+        forms_processed=successful,
+        total_forms=total_forms,
+        document_ids=document_ids,
+        webhook_url=webhook_url,
+    )
 
     return {
         "status": status,
@@ -398,10 +681,23 @@ async def process_pdf_internal(
     }
 
 
+@app.function_name(name="ProcessDocumentV1")
+@app.route(route="v1/process", methods=["POST"])
+async def process_document_v1(req: func.HttpRequest) -> func.HttpResponse:
+    """Process a PDF document (API v1 - versioned endpoint).
+
+    See process_document for full documentation.
+    """
+    return await _process_document_impl(req, api_version="v1")
+
+
 @app.function_name(name="ProcessDocument")
 @app.route(route="process", methods=["POST"])
 async def process_document(req: func.HttpRequest) -> func.HttpResponse:
     """Process a PDF document through Document Intelligence.
+
+    This endpoint also available at /api/v1/process with explicit versioning.
+    Versioned endpoints include X-API-Version headers and deprecation notices.
 
     Request body:
         {
@@ -425,20 +721,63 @@ async def process_document(req: func.HttpRequest) -> func.HttpResponse:
     - Compares header similarity between pages
     - Falls back to fixed pagesPerForm if no boundaries detected
     """
-    logger.info("ProcessDocument HTTP trigger invoked")
+    return await _process_document_impl(req, api_version=CURRENT_VERSION)
+
+
+async def _process_document_impl(
+    req: func.HttpRequest,
+    api_version: str = CURRENT_VERSION,
+) -> func.HttpResponse:
+    """Internal implementation for process document endpoint."""
+    logger.info(f"ProcessDocument HTTP trigger invoked (API {api_version})")
+
+    # Check if version is supported
+    if not is_version_supported(api_version):
+        return versioned_error_response(
+            f"API version '{api_version}' is not supported. Supported versions: {', '.join(SUPPORTED_VERSIONS)}",
+            version=api_version,
+            status_code=400,
+        )
+
+    # Security: Validate request size
+    size_error = validate_request_size(req, api_version)
+    if size_error:
+        return size_error
 
     try:
         req_body = req.get_json()
     except ValueError:
-        return create_error_response("Invalid JSON in request body", status_code=400)
+        return versioned_error_response(
+            "Invalid JSON in request body",
+            version=api_version,
+            status_code=400,
+        )
 
     blob_url = req_body.get("blobUrl")
     blob_name = req_body.get("blobName")
 
     if not blob_url:
-        return create_error_response("Missing required field: blobUrl", status_code=400)
+        return versioned_error_response(
+            "Missing required field: blobUrl",
+            version=api_version,
+            status_code=400,
+        )
     if not blob_name:
-        return create_error_response("Missing required field: blobName", status_code=400)
+        return versioned_error_response(
+            "Missing required field: blobName",
+            version=api_version,
+            status_code=400,
+        )
+
+    # Security: Validate blob name for path traversal
+    try:
+        validate_blob_name(blob_name)
+    except BlobServiceError as e:
+        return versioned_error_response(
+            f"Invalid blob name: {e.reason}",
+            version=api_version,
+            status_code=400,
+        )
 
     try:
         config = get_config()
@@ -449,8 +788,9 @@ async def process_document(req: func.HttpRequest) -> func.HttpResponse:
         if profile_name:
             profile = get_profile(profile_name)
             if not profile:
-                return create_error_response(
+                return versioned_error_response(
                     f"Unknown profile: {profile_name}. Use GET /api/profiles to list available profiles.",
+                    version=api_version,
                     status_code=400,
                 )
 
@@ -492,32 +832,41 @@ async def process_document(req: func.HttpRequest) -> func.HttpResponse:
         # Add tenant info if multi-tenant enabled
         if config.multi_tenant_enabled and tenant_id:
             result["tenantId"] = tenant_id
+        # Add API version to result
+        result["apiVersion"] = api_version
 
-        return create_response(result, status_code=200)
+        return versioned_response(result, version=api_version, status_code=200)
 
     except ConfigurationError as e:
-        return create_error_response(f"Configuration error: {e}", status_code=500)
+        return versioned_error_response(
+            f"Configuration error: {e}",
+            version=api_version,
+            status_code=500,
+        )
 
     except PdfSplitError as e:
         logger.error(f"PDF split error: {e}")
-        return create_error_response(
+        return versioned_error_response(
             f"Failed to split PDF: {e.reason}",
+            version=api_version,
             status_code=500,
             details={"blobName": blob_name},
         )
 
     except BlobServiceError as e:
         logger.error(f"Blob service error: {e}")
-        return create_error_response(
+        return versioned_error_response(
             f"Failed to access blob: {e.reason}",
+            version=api_version,
             status_code=500,
             details={"blobName": blob_name},
         )
 
     except RateLimitError as e:
         logger.warning(f"Rate limit exceeded: {e}")
-        return create_error_response(
+        return versioned_error_response(
             "Document Intelligence rate limit exceeded. Please retry later.",
+            version=api_version,
             status_code=429,
             details={"blobName": blob_name},
         )
@@ -541,23 +890,29 @@ async def process_document(req: func.HttpRequest) -> func.HttpResponse:
         except Exception:
             logger.exception("Failed to save error document")
 
-        return create_error_response(
+        return versioned_error_response(
             f"Document processing failed: {e.reason}",
+            version=api_version,
             status_code=500,
             details={"blobName": blob_name},
         )
 
     except CosmosError as e:
         logger.error(f"Cosmos DB error: {e}")
-        return create_error_response(
+        return versioned_error_response(
             f"Database error: {e.reason}",
+            version=api_version,
             status_code=500,
             details={"operation": e.operation},
         )
 
     except Exception as e:
         logger.exception(f"Unexpected error: {e}")
-        return create_error_response("Internal server error", status_code=500)
+        return versioned_error_response(
+            "Internal server error",
+            version=api_version,
+            status_code=500,
+        )
 
 
 @app.function_name(name="ReprocessDocument")
@@ -999,9 +1354,326 @@ async def health_check(req: func.HttpRequest) -> func.HttpResponse:
             "status": overall_status,
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "version": "2.0.0",
+            "apiVersion": CURRENT_VERSION,
             "services": services,
             "blobTrigger": blob_trigger_status,
         }
+    )
+
+
+@app.function_name(name="HealthLive")
+@app.route(route="health/live", methods=["GET"])
+async def health_liveness(req: func.HttpRequest) -> func.HttpResponse:
+    """Kubernetes-style liveness probe.
+
+    Returns 200 if the application is running and responsive.
+    Used by container orchestrators to determine if the app should be restarted.
+
+    This probe should:
+    - Return quickly (< 1 second)
+    - Not check external dependencies
+    - Only verify the app process is alive and can handle requests
+    """
+    return create_response(
+        {
+            "status": "alive",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "version": "2.0.0",
+        },
+        status_code=200,
+    )
+
+
+@app.function_name(name="HealthReady")
+@app.route(route="health/ready", methods=["GET"])
+async def health_readiness(req: func.HttpRequest) -> func.HttpResponse:
+    """Kubernetes-style readiness probe.
+
+    Returns 200 if the application is ready to accept traffic.
+    Checks all critical dependencies: Storage, Cosmos DB, Document Intelligence.
+
+    Used by container orchestrators and load balancers to determine
+    if traffic should be routed to this instance.
+
+    Query parameters:
+        deep: If "true", performs actual connectivity tests (slower but more thorough)
+    """
+    deep_check = req.params.get("deep", "false").lower() == "true"
+    dependencies: dict[str, dict[str, Any]] = {}
+    is_ready = True
+
+    # Check configuration is valid
+    try:
+        config = get_config()
+        dependencies["config"] = {"status": "ready", "message": "Configuration loaded"}
+    except Exception as e:
+        dependencies["config"] = {"status": "not_ready", "error": str(e)}
+        is_ready = False
+
+    # Check Azure Blob Storage
+    try:
+        blob_service = get_blob_service()
+        if blob_service:
+            if deep_check:
+                # Perform actual connectivity test
+                try:
+                    # Try to access storage - list operation is fast
+                    list(blob_service.list_blobs("pdfs", prefix="incoming/", max_results=1))
+                    dependencies["storage"] = {
+                        "status": "ready",
+                        "message": "Storage accessible",
+                    }
+                except Exception as e:
+                    dependencies["storage"] = {
+                        "status": "not_ready",
+                        "error": f"Storage connectivity failed: {e}",
+                    }
+                    is_ready = False
+            else:
+                # Shallow check - just verify service is configured
+                dependencies["storage"] = {
+                    "status": "ready",
+                    "message": "Storage service configured",
+                }
+        else:
+            dependencies["storage"] = {
+                "status": "not_ready",
+                "error": "Storage connection string not configured",
+            }
+            is_ready = False
+    except Exception as e:
+        dependencies["storage"] = {"status": "not_ready", "error": str(e)}
+        is_ready = False
+
+    # Check Cosmos DB
+    try:
+        cosmos_service = get_cosmos_service()
+        if deep_check:
+            # Perform actual connectivity test
+            try:
+                # Query for a non-existent document - fast way to verify connectivity
+                await cosmos_service.get_document("__health_check__", "__health_check__")
+                dependencies["cosmos"] = {
+                    "status": "ready",
+                    "message": "Cosmos DB accessible",
+                }
+            except CosmosError as e:
+                # Even a "not found" response means connectivity works
+                if "not found" in str(e).lower() or "404" in str(e):
+                    dependencies["cosmos"] = {
+                        "status": "ready",
+                        "message": "Cosmos DB accessible",
+                    }
+                else:
+                    dependencies["cosmos"] = {
+                        "status": "not_ready",
+                        "error": f"Cosmos DB connectivity failed: {e}",
+                    }
+                    is_ready = False
+            except Exception as e:
+                dependencies["cosmos"] = {
+                    "status": "not_ready",
+                    "error": f"Cosmos DB connectivity failed: {e}",
+                }
+                is_ready = False
+        else:
+            # Shallow check - verify endpoint is configured
+            if config.cosmos_endpoint:
+                dependencies["cosmos"] = {
+                    "status": "ready",
+                    "message": "Cosmos DB endpoint configured",
+                }
+            else:
+                dependencies["cosmos"] = {
+                    "status": "not_ready",
+                    "error": "Cosmos DB endpoint not configured",
+                }
+                is_ready = False
+    except Exception as e:
+        dependencies["cosmos"] = {"status": "not_ready", "error": str(e)}
+        is_ready = False
+
+    # Check Document Intelligence
+    try:
+        if config.doc_intel_endpoint and config.doc_intel_api_key:
+            if deep_check:
+                # Perform actual connectivity test
+                try:
+                    doc_service = get_document_service()
+                    # Validate a prebuilt model (always exists)
+                    await doc_service.validate_model("prebuilt-layout")
+                    dependencies["document_intelligence"] = {
+                        "status": "ready",
+                        "message": "Document Intelligence accessible",
+                    }
+                except Exception as e:
+                    dependencies["document_intelligence"] = {
+                        "status": "degraded",
+                        "warning": f"Document Intelligence validation failed: {e}",
+                        "message": "Service may still work for custom models",
+                    }
+                    # Don't mark as not ready - validation might fail but service could work
+            else:
+                dependencies["document_intelligence"] = {
+                    "status": "ready",
+                    "message": "Document Intelligence configured",
+                }
+        else:
+            dependencies["document_intelligence"] = {
+                "status": "not_ready",
+                "error": "Document Intelligence endpoint or API key not configured",
+            }
+            is_ready = False
+    except Exception as e:
+        dependencies["document_intelligence"] = {"status": "not_ready", "error": str(e)}
+        is_ready = False
+
+    # Calculate overall status
+    status_code = 200 if is_ready else 503
+    overall_status = "ready" if is_ready else "not_ready"
+
+    return create_response(
+        {
+            "status": overall_status,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "version": "2.0.0",
+            "apiVersion": CURRENT_VERSION,
+            "deepCheck": deep_check,
+            "dependencies": dependencies,
+        },
+        status_code=status_code,
+    )
+
+
+@app.function_name(name="GetAPIVersions")
+@app.route(route="versions", methods=["GET"])
+async def get_api_versions(req: func.HttpRequest) -> func.HttpResponse:
+    """Get available API versions and their status.
+
+    Returns information about supported, current, and deprecated API versions.
+    Use this to discover available versions and plan migrations.
+
+    Response:
+        {
+            "currentVersion": "v1",
+            "supportedVersions": ["v1"],
+            "deprecatedVersions": {},
+            "versions": {
+                "v1": {
+                    "version": "v1",
+                    "isCurrent": true,
+                    "isDeprecated": false,
+                    "releaseDate": "2025-01-01",
+                    "changelog": [...]
+                }
+            }
+        }
+    """
+    logger.info("GetAPIVersions HTTP trigger invoked")
+
+    return versioned_response(
+        get_api_versions_info(),
+        version=CURRENT_VERSION,
+        status_code=200,
+    )
+
+
+@app.function_name(name="GetOpenAPISpec")
+@app.route(route="openapi.yaml", methods=["GET"])
+async def get_openapi_spec(req: func.HttpRequest) -> func.HttpResponse:
+    """Get OpenAPI specification in YAML format.
+
+    Returns the OpenAPI 3.1 specification for this API.
+    """
+    import os
+
+    logger.info("GetOpenAPISpec HTTP trigger invoked")
+
+    try:
+        # Read the OpenAPI spec file
+        spec_path = os.path.join(os.path.dirname(__file__), "openapi.yaml")
+        with open(spec_path, encoding="utf-8") as f:
+            spec_content = f.read()
+
+        return func.HttpResponse(
+            body=spec_content,
+            status_code=200,
+            mimetype="application/x-yaml",
+            headers={"Content-Disposition": "inline; filename=openapi.yaml"},
+        )
+    except FileNotFoundError:
+        return create_error_response("OpenAPI spec not found", status_code=404)
+    except Exception as e:
+        logger.exception(f"Error reading OpenAPI spec: {e}")
+        return create_error_response("Failed to read OpenAPI spec", status_code=500)
+
+
+@app.function_name(name="GetDocs")
+@app.route(route="docs", methods=["GET"])
+async def get_api_docs(req: func.HttpRequest) -> func.HttpResponse:
+    """Serve Swagger UI for API documentation.
+
+    Returns an HTML page with Swagger UI rendering the OpenAPI specification.
+    """
+    logger.info("GetDocs HTTP trigger invoked")
+
+    # Get the base URL for the OpenAPI spec
+    host = req.headers.get("Host", "localhost:7071")
+    scheme = "https" if "azurewebsites.net" in host else "http"
+    spec_url = f"{scheme}://{host}/api/openapi.yaml"
+
+    # Swagger UI HTML
+    html_content = f'''<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document Processing Pipeline API</title>
+    <link rel="stylesheet" type="text/css" href="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css">
+    <style>
+        html {{ box-sizing: border-box; overflow-y: scroll; }}
+        *, *:before, *:after {{ box-sizing: inherit; }}
+        body {{ margin: 0; background: #fafafa; }}
+        .swagger-ui .topbar {{ display: none; }}
+    </style>
+</head>
+<body>
+    <div id="swagger-ui"></div>
+    <script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
+    <script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-standalone-preset.js"></script>
+    <script>
+        window.onload = function() {{
+            window.ui = SwaggerUIBundle({{
+                url: "{spec_url}",
+                dom_id: '#swagger-ui',
+                deepLinking: true,
+                presets: [
+                    SwaggerUIBundle.presets.apis,
+                    SwaggerUIStandalonePreset
+                ],
+                plugins: [
+                    SwaggerUIBundle.plugins.DownloadUrl
+                ],
+                layout: "StandaloneLayout",
+                persistAuthorization: true,
+                displayRequestDuration: true,
+                filter: true,
+                showExtensions: true,
+                showCommonExtensions: true,
+                syntaxHighlight: {{
+                    activate: true,
+                    theme: "monokai"
+                }}
+            }});
+        }};
+    </script>
+</body>
+</html>'''
+
+    return func.HttpResponse(
+        body=html_content,
+        status_code=200,
+        mimetype="text/html",
     )
 
 
@@ -1878,3 +2550,193 @@ async def process_blob_trigger(blob: func.InputStream) -> None:
 
         except Exception as save_error:
             logger.error(f"Failed to save error state: {save_error}")
+
+
+# ============================================================================
+# Timer Trigger for Dead Letter Queue Retry Processing
+# ============================================================================
+
+
+@app.function_name(name="DLQRetryProcessor")
+@app.timer_trigger(
+    arg_name="timer",
+    schedule="%DLQ_RETRY_SCHEDULE%",  # Defaults to "0 */15 * * * *" (every 15 min)
+    run_on_startup=False,
+)
+async def dlq_retry_processor(timer: func.TimerRequest) -> None:
+    """Process dead letter queue items for automatic retry.
+
+    Timer-triggered function that:
+    - Queries DLQ for items ready for retry
+    - Attempts to reprocess each item
+    - Updates item status based on result
+    - Sends webhook notifications for recovered items
+    - Tracks metrics with telemetry
+
+    The schedule is configurable via DLQ_RETRY_SCHEDULE environment variable.
+    Default: every 15 minutes ("0 */15 * * * *")
+
+    Args:
+        timer: Timer request with schedule information.
+    """
+    config = get_config()
+
+    # Check if DLQ retry is enabled
+    if not config.dlq_retry_enabled:
+        logger.debug("DLQ retry processing is disabled")
+        return
+
+    logger.info(
+        f"DLQ retry processor started "
+        f"(past_due={timer.past_due}, schedule_status={timer.schedule_status})"
+    )
+
+    telemetry = get_telemetry_service()
+    dlq_service = get_dead_letter_queue_service()
+
+    if not dlq_service:
+        logger.warning("DLQ service not available - skipping retry processing")
+        return
+
+    # Track metrics
+    items_processed = 0
+    items_recovered = 0
+    items_failed = 0
+    items_abandoned = 0
+
+    try:
+        # Query items ready for retry
+        items = await dlq_service.query_ready_for_retry(limit=config.dlq_retry_batch_size)
+
+        if not items:
+            logger.debug("No DLQ items ready for retry")
+            return
+
+        logger.info(f"Found {len(items)} DLQ items to retry")
+
+        for item in items:
+            items_processed += 1
+
+            try:
+                # Mark as in progress
+                await dlq_service.mark_retry_in_progress(item.id, item.source_file)
+
+                logger.info(
+                    f"Retrying DLQ item: {item.id} "
+                    f"(source={item.source_file}, attempt={item.retry_count + 1})"
+                )
+
+                # Attempt to reprocess the document
+                result = await process_pdf_internal(
+                    blob_url=item.blob_url,
+                    blob_name=item.source_file,
+                    model_id=item.model_id,
+                    webhook_url=config.webhook_url,
+                )
+
+                if result.get("status") == "completed":
+                    # Success! Mark as resolved
+                    await dlq_service.mark_retry_success(
+                        item.id,
+                        item.source_file,
+                        note=f"Auto-retry successful after {item.retry_count + 1} attempts",
+                    )
+                    items_recovered += 1
+
+                    logger.info(f"DLQ item {item.id} recovered successfully")
+
+                    # Send webhook notification for recovery
+                    webhook_service = get_webhook_service()
+                    if webhook_service and config.webhook_url:
+                        await webhook_service.send_notification(
+                            payload={
+                                "event": "document.recovered",
+                                "sourceFile": item.source_file,
+                                "dlqItemId": item.id,
+                                "originalError": item.error_message,
+                                "retryCount": item.retry_count + 1,
+                                "recoveredAt": datetime.now(timezone.utc).isoformat(),
+                            },
+                            webhook_url=config.webhook_url,
+                        )
+
+                else:
+                    # Still failed
+                    error_msg = result.get("error", "Unknown error during retry")
+                    updated_item = await dlq_service.mark_retry_failed(
+                        item.id,
+                        item.source_file,
+                        error_message=error_msg,
+                    )
+
+                    if updated_item and updated_item.status == DeadLetterStatus.ABANDONED:
+                        items_abandoned += 1
+                        logger.warning(
+                            f"DLQ item {item.id} permanently abandoned "
+                            f"after {updated_item.retry_count} retries"
+                        )
+                    else:
+                        items_failed += 1
+
+            except BlobServiceError as e:
+                # Blob no longer exists or inaccessible
+                logger.warning(f"Blob error for DLQ item {item.id}: {e}")
+                await dlq_service.mark_retry_failed(
+                    item.id,
+                    item.source_file,
+                    error_message=f"Blob error: {e.reason}",
+                    permanent=True,  # Mark as permanent if blob is gone
+                )
+                items_abandoned += 1
+
+            except DocumentProcessingError as e:
+                logger.warning(f"Document processing error for DLQ item {item.id}: {e}")
+                await dlq_service.mark_retry_failed(
+                    item.id,
+                    item.source_file,
+                    error_message=f"Processing error: {e}",
+                )
+                items_failed += 1
+
+            except RateLimitError as e:
+                # Rate limited - don't count as failure, will retry next run
+                logger.warning(f"Rate limited during DLQ retry for {item.id}: {e}")
+                # Reset status to pending so it's picked up next time
+                await dlq_service.update_status(
+                    item.id,
+                    item.source_file,
+                    DeadLetterStatus.PENDING,
+                    note="Rate limited during retry - will retry next cycle",
+                )
+
+            except Exception as e:
+                logger.exception(f"Unexpected error retrying DLQ item {item.id}: {e}")
+                await dlq_service.mark_retry_failed(
+                    item.id,
+                    item.source_file,
+                    error_message=str(e),
+                )
+                items_failed += 1
+
+        # Log summary
+        logger.info(
+            f"DLQ retry processor completed: "
+            f"processed={items_processed}, recovered={items_recovered}, "
+            f"failed={items_failed}, abandoned={items_abandoned}"
+        )
+
+        # Track telemetry metrics
+        telemetry.track_event(
+            "DLQRetryBatch",
+            {
+                "items_processed": items_processed,
+                "items_recovered": items_recovered,
+                "items_failed": items_failed,
+                "items_abandoned": items_abandoned,
+                "batch_size": config.dlq_retry_batch_size,
+            },
+        )
+
+    except Exception as e:
+        logger.exception(f"DLQ retry processor failed: {e}")
+        telemetry.track_exception(e, {"context": "dlq_retry_processor"})

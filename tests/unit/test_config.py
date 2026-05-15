@@ -13,7 +13,10 @@ class TestConfigurationError:
         """Test error message with one missing variable."""
         from src.functions.config import ConfigurationError
 
-        error = ConfigurationError(["DOC_INTEL_ENDPOINT"])
+        error = ConfigurationError(
+            "Missing: DOC_INTEL_ENDPOINT",
+            missing_vars=["DOC_INTEL_ENDPOINT"],
+        )
 
         assert error.missing_vars == ["DOC_INTEL_ENDPOINT"]
         assert "DOC_INTEL_ENDPOINT" in str(error)
@@ -22,12 +25,27 @@ class TestConfigurationError:
         """Test error message with multiple missing variables."""
         from src.functions.config import ConfigurationError
 
-        error = ConfigurationError(["VAR1", "VAR2", "VAR3"])
+        error = ConfigurationError(
+            "Missing: VAR1, VAR2, VAR3",
+            missing_vars=["VAR1", "VAR2", "VAR3"],
+        )
 
         assert error.missing_vars == ["VAR1", "VAR2", "VAR3"]
         assert "VAR1" in str(error)
         assert "VAR2" in str(error)
         assert "VAR3" in str(error)
+
+    def test_error_with_validation_errors(self):
+        """Test error message with validation errors."""
+        from src.functions.config import ConfigurationError
+
+        error = ConfigurationError(
+            "Validation failed",
+            validation_errors=["Field1: invalid", "Field2: out of range"],
+        )
+
+        assert error.validation_errors == ["Field1: invalid", "Field2: out of range"]
+        assert "Validation failed" in str(error)
 
 
 class TestConfig:

@@ -5,6 +5,214 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 
+class TestParsedBlobUrl:
+    """Tests for ParsedBlobUrl dataclass."""
+
+    def test_dataclass_creation(self):
+        """Test creating ParsedBlobUrl instance."""
+        from src.functions.services.blob_service import ParsedBlobUrl
+
+        parsed = ParsedBlobUrl(
+            account_name="storage",
+            container_name="pdfs",
+            blob_name="folder/file.pdf",
+            original_url="https://storage.blob.core.windows.net/pdfs/folder/file.pdf?sv=2021",
+        )
+
+        assert parsed.account_name == "storage"
+        assert parsed.container_name == "pdfs"
+        assert parsed.blob_name == "folder/file.pdf"
+
+    def test_base_url_property(self):
+        """Test base_url property removes SAS token."""
+        from src.functions.services.blob_service import ParsedBlobUrl
+
+        parsed = ParsedBlobUrl(
+            account_name="storage",
+            container_name="pdfs",
+            blob_name="file.pdf",
+            original_url="https://storage.blob.core.windows.net/pdfs/file.pdf?sv=2021&sig=xxx",
+        )
+
+        assert parsed.base_url == "https://storage.blob.core.windows.net/pdfs/file.pdf"
+
+    def test_base_url_property_no_sas(self):
+        """Test base_url property when no SAS token."""
+        from src.functions.services.blob_service import ParsedBlobUrl
+
+        parsed = ParsedBlobUrl(
+            account_name="storage",
+            container_name="pdfs",
+            blob_name="file.pdf",
+            original_url="https://storage.blob.core.windows.net/pdfs/file.pdf",
+        )
+
+        assert parsed.base_url == "https://storage.blob.core.windows.net/pdfs/file.pdf"
+
+
+class TestParseBlobUrlComponents:
+    """Tests for parse_blob_url_components function."""
+
+    def test_parse_basic_url(self):
+        """Test parsing a basic blob URL."""
+        from src.functions.services.blob_service import parse_blob_url_components
+
+        result = parse_blob_url_components(
+            "https://myaccount.blob.core.windows.net/container/folder/file.pdf"
+        )
+
+        assert result.account_name == "myaccount"
+        assert result.container_name == "container"
+        assert result.blob_name == "folder/file.pdf"
+
+    def test_parse_url_with_sas_token(self):
+        """Test parsing URL with SAS token."""
+        from src.functions.services.blob_service import parse_blob_url_components
+
+        result = parse_blob_url_components(
+            "https://myaccount.blob.core.windows.net/container/file.pdf?sv=2021-06-08&sig=xxx"
+        )
+
+        assert result.account_name == "myaccount"
+        assert result.blob_name == "file.pdf"
+
+    def test_parse_url_with_encoded_spaces(self):
+        """Test parsing URL with URL-encoded spaces."""
+        from src.functions.services.blob_service import parse_blob_url_components
+
+        result = parse_blob_url_components(
+            "https://myaccount.blob.core.windows.net/container/my%20document.pdf"
+        )
+
+        assert result.blob_name == "my document.pdf"
+
+    def test_parse_url_with_encoded_special_chars(self):
+        """Test parsing URL with URL-encoded special characters."""
+        from src.functions.services.blob_service import parse_blob_url_components
+
+        result = parse_blob_url_components(
+            "https://myaccount.blob.core.windows.net/container/file%28copy%29.pdf"
+        )
+
+        assert result.blob_name == "file(copy).pdf"
+
+    def test_parse_url_invalid_hostname(self):
+        """Test error on invalid hostname."""
+        from src.functions.services.blob_service import BlobServiceError, parse_blob_url_components
+
+        with pytest.raises(BlobServiceError) as exc:
+            parse_blob_url_components("https://localhost/container/file.pdf")
+
+        assert "Invalid blob URL hostname" in str(exc.value)
+
+    def test_parse_url_invalid_path(self):
+        """Test error on invalid path (no blob name)."""
+        from src.functions.services.blob_service import BlobServiceError, parse_blob_url_components
+
+        with pytest.raises(BlobServiceError) as exc:
+            parse_blob_url_components("https://myaccount.blob.core.windows.net/container")
+
+        assert "Invalid blob URL path" in str(exc.value)
+
+    def test_parse_url_path_traversal(self):
+        """Test error on path traversal attempt."""
+        from src.functions.services.blob_service import BlobServiceError, parse_blob_url_components
+
+        with pytest.raises(BlobServiceError) as exc:
+            parse_blob_url_components(
+                "https://myaccount.blob.core.windows.net/container/../../../etc/passwd"
+            )
+
+        assert "path traversal" in str(exc.value).lower()
+
+    def test_parse_url_skip_validation(self):
+        """Test skipping blob name validation."""
+        from src.functions.services.blob_service import parse_blob_url_components
+
+        # This would normally fail validation, but with validate=False it passes
+        result = parse_blob_url_components(
+            "https://myaccount.blob.core.windows.net/container/../etc/passwd",
+            validate=False,
+        )
+
+        assert "../etc/passwd" in result.blob_name
+
+    def test_parse_url_generic_error(self):
+        """Test handling of generic exceptions."""
+        from src.functions.services.blob_service import BlobServiceError, parse_blob_url_components
+
+        with patch("src.functions.services.blob_service.urlparse") as mock_urlparse:
+            mock_urlparse.side_effect = RuntimeError("Unexpected error")
+
+            with pytest.raises(BlobServiceError) as exc:
+                parse_blob_url_components("https://test.blob.core.windows.net/c/b")
+
+            assert "Failed to parse blob URL" in str(exc.value)
+
+
+class TestSanitizeBlobUrl:
+    """Tests for sanitize_blob_url function."""
+
+    def test_sanitize_url_with_sas_token(self):
+        """Test removing SAS token from URL."""
+        from src.functions.services.blob_service import sanitize_blob_url
+
+        url = "https://storage.blob.core.windows.net/container/file.pdf?sv=2021-06-08&sig=abc123"
+        result = sanitize_blob_url(url)
+        assert result == "https://storage.blob.core.windows.net/container/file.pdf"
+
+    def test_sanitize_url_without_sas_token(self):
+        """Test URL without SAS token remains unchanged."""
+        from src.functions.services.blob_service import sanitize_blob_url
+
+        url = "https://storage.blob.core.windows.net/container/file.pdf"
+        result = sanitize_blob_url(url)
+        assert result == "https://storage.blob.core.windows.net/container/file.pdf"
+
+
+class TestValidateBlobName:
+    """Tests for validate_blob_name function."""
+
+    def test_valid_blob_name(self):
+        """Test valid blob name passes validation."""
+        from src.functions.services.blob_service import validate_blob_name
+
+        # Should not raise
+        validate_blob_name("folder/subfolder/file.pdf")
+
+    def test_empty_blob_name_raises(self):
+        """Test empty blob name raises error."""
+        from src.functions.services.blob_service import BlobServiceError, validate_blob_name
+
+        with pytest.raises(BlobServiceError) as exc_info:
+            validate_blob_name("")
+        assert "cannot be empty" in str(exc_info.value)
+
+    def test_path_traversal_double_dot_raises(self):
+        """Test path traversal with .. raises error."""
+        from src.functions.services.blob_service import BlobServiceError, validate_blob_name
+
+        with pytest.raises(BlobServiceError) as exc_info:
+            validate_blob_name("folder/../../../etc/passwd")
+        assert "path traversal" in str(exc_info.value).lower()
+
+    def test_absolute_path_raises(self):
+        """Test absolute path raises error."""
+        from src.functions.services.blob_service import BlobServiceError, validate_blob_name
+
+        with pytest.raises(BlobServiceError) as exc_info:
+            validate_blob_name("/etc/passwd")
+        assert "absolute path" in str(exc_info.value).lower()
+
+    def test_null_byte_raises(self):
+        """Test null byte injection raises error."""
+        from src.functions.services.blob_service import BlobServiceError, validate_blob_name
+
+        with pytest.raises(BlobServiceError) as exc_info:
+            validate_blob_name("file.pdf\x00.txt")
+        assert "null byte" in str(exc_info.value).lower()
+
+
 class TestBlobServiceError:
     """Tests for BlobServiceError exception."""
 
@@ -106,6 +314,28 @@ class TestBlobService:
             blob_service.parse_blob_url(url)
 
         assert "Invalid blob URL" in str(exc.value)
+
+    def test_parse_blob_url_invalid_hostname(self, blob_service):
+        """Test error on invalid hostname without dots."""
+        from src.functions.services.blob_service import BlobServiceError
+
+        url = "https://localhost/container/blob.pdf"  # No dots in hostname
+
+        with pytest.raises(BlobServiceError) as exc:
+            blob_service.parse_blob_url(url)
+
+        assert "Invalid blob URL hostname" in str(exc.value)
+
+    def test_parse_blob_url_path_traversal(self, blob_service):
+        """Test error on path traversal attempt."""
+        from src.functions.services.blob_service import BlobServiceError
+
+        url = "https://storage.blob.core.windows.net/container/../../../etc/passwd"
+
+        with pytest.raises(BlobServiceError) as exc:
+            blob_service.parse_blob_url(url)
+
+        assert "path traversal" in str(exc.value).lower()
 
     def test_parse_blob_url_generic_error(self, blob_service):
         """Test parse_blob_url handles generic exceptions."""

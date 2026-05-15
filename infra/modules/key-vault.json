@@ -1,0 +1,265 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.39.26.7824",
+      "templateHash": "3154273178300853209"
+    }
+  },
+  "parameters": {
+    "prefix": {
+      "type": "string",
+      "metadata": {
+        "description": "Prefix for resource naming"
+      }
+    },
+    "location": {
+      "type": "string",
+      "defaultValue": "[resourceGroup().location]",
+      "metadata": {
+        "description": "Azure region for deployment"
+      }
+    },
+    "environment": {
+      "type": "string",
+      "metadata": {
+        "description": "Environment name (dev, prod)"
+      }
+    },
+    "tags": {
+      "type": "object",
+      "defaultValue": {},
+      "metadata": {
+        "description": "Tags to apply to resources"
+      }
+    },
+    "storageConnectionString": {
+      "type": "securestring",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Storage account connection string to store as secret"
+      }
+    },
+    "docIntelApiKey": {
+      "type": "securestring",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Document Intelligence API key to store as secret"
+      }
+    },
+    "cosmosConnectionString": {
+      "type": "securestring",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Cosmos DB connection string to store as secret"
+      }
+    },
+    "logAnalyticsWorkspaceId": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Log Analytics workspace ID for diagnostic settings (optional)"
+      }
+    },
+    "enableDiagnostics": {
+      "type": "bool",
+      "defaultValue": true,
+      "metadata": {
+        "description": "Enable diagnostic settings"
+      }
+    },
+    "enableNetworkHardening": {
+      "type": "bool",
+      "defaultValue": "[equals(parameters('environment'), 'prod')]",
+      "metadata": {
+        "description": "Enable network hardening (restrict public access). For production, set to true and use Private Endpoints."
+      }
+    },
+    "allowedIpRanges": {
+      "type": "array",
+      "defaultValue": [],
+      "metadata": {
+        "description": "Allowed IP addresses when network hardening is enabled (CIDR notation). Empty means Private Endpoint only."
+      }
+    },
+    "allowedSubnetIds": {
+      "type": "array",
+      "defaultValue": [],
+      "metadata": {
+        "description": "Allowed subnet resource IDs for VNet service endpoints"
+      }
+    }
+  },
+  "variables": {
+    "copy": [
+      {
+        "name": "ipRules",
+        "count": "[length(parameters('allowedIpRanges'))]",
+        "input": {
+          "value": "[parameters('allowedIpRanges')[copyIndex('ipRules')]]"
+        }
+      },
+      {
+        "name": "virtualNetworkRules",
+        "count": "[length(parameters('allowedSubnetIds'))]",
+        "input": {
+          "id": "[parameters('allowedSubnetIds')[copyIndex('virtualNetworkRules')]]"
+        }
+      }
+    ],
+    "keyVaultName": "[format('{0}-kv-{1}', parameters('prefix'), parameters('environment'))]",
+    "hasStorageSecret": "[not(equals(parameters('storageConnectionString'), ''))]",
+    "hasDocIntelSecret": "[not(equals(parameters('docIntelApiKey'), ''))]",
+    "hasCosmosSecret": "[not(equals(parameters('cosmosConnectionString'), ''))]"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.KeyVault/vaults",
+      "apiVersion": "2024-11-01",
+      "name": "[variables('keyVaultName')]",
+      "location": "[parameters('location')]",
+      "tags": "[parameters('tags')]",
+      "properties": {
+        "sku": {
+          "family": "A",
+          "name": "standard"
+        },
+        "tenantId": "[subscription().tenantId]",
+        "enableRbacAuthorization": true,
+        "enableSoftDelete": true,
+        "softDeleteRetentionInDays": 90,
+        "enablePurgeProtection": "[equals(parameters('environment'), 'prod')]",
+        "publicNetworkAccess": "[if(parameters('enableNetworkHardening'), 'Disabled', 'Enabled')]",
+        "networkAcls": {
+          "defaultAction": "[if(parameters('enableNetworkHardening'), 'Deny', 'Allow')]",
+          "bypass": "AzureServices",
+          "ipRules": "[if(parameters('enableNetworkHardening'), variables('ipRules'), createArray())]",
+          "virtualNetworkRules": "[if(parameters('enableNetworkHardening'), variables('virtualNetworkRules'), createArray())]"
+        }
+      }
+    },
+    {
+      "condition": "[not(equals(parameters('storageConnectionString'), ''))]",
+      "type": "Microsoft.KeyVault/vaults/secrets",
+      "apiVersion": "2024-11-01",
+      "name": "[format('{0}/{1}', variables('keyVaultName'), 'storage-connection-string')]",
+      "properties": {
+        "value": "[parameters('storageConnectionString')]"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.KeyVault/vaults', variables('keyVaultName'))]"
+      ]
+    },
+    {
+      "condition": "[not(equals(parameters('docIntelApiKey'), ''))]",
+      "type": "Microsoft.KeyVault/vaults/secrets",
+      "apiVersion": "2024-11-01",
+      "name": "[format('{0}/{1}', variables('keyVaultName'), 'doc-intel-api-key')]",
+      "properties": {
+        "value": "[parameters('docIntelApiKey')]"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.KeyVault/vaults', variables('keyVaultName'))]"
+      ]
+    },
+    {
+      "condition": "[not(equals(parameters('cosmosConnectionString'), ''))]",
+      "type": "Microsoft.KeyVault/vaults/secrets",
+      "apiVersion": "2024-11-01",
+      "name": "[format('{0}/{1}', variables('keyVaultName'), 'cosmos-connection-string')]",
+      "properties": {
+        "value": "[parameters('cosmosConnectionString')]"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.KeyVault/vaults', variables('keyVaultName'))]"
+      ]
+    },
+    {
+      "condition": "[and(parameters('enableDiagnostics'), not(equals(parameters('logAnalyticsWorkspaceId'), '')))]",
+      "type": "Microsoft.Insights/diagnosticSettings",
+      "apiVersion": "2021-05-01-preview",
+      "scope": "[format('Microsoft.KeyVault/vaults/{0}', variables('keyVaultName'))]",
+      "name": "[format('{0}-diagnostics', variables('keyVaultName'))]",
+      "properties": {
+        "workspaceId": "[parameters('logAnalyticsWorkspaceId')]",
+        "logs": [
+          {
+            "category": "AuditEvent",
+            "enabled": true,
+            "retentionPolicy": {
+              "enabled": false,
+              "days": 0
+            }
+          },
+          {
+            "category": "AzurePolicyEvaluationDetails",
+            "enabled": true,
+            "retentionPolicy": {
+              "enabled": false,
+              "days": 0
+            }
+          }
+        ],
+        "metrics": [
+          {
+            "category": "AllMetrics",
+            "enabled": true,
+            "retentionPolicy": {
+              "enabled": false,
+              "days": 0
+            }
+          }
+        ]
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.KeyVault/vaults', variables('keyVaultName'))]"
+      ]
+    }
+  ],
+  "outputs": {
+    "vaultUri": {
+      "type": "string",
+      "metadata": {
+        "description": "Key Vault URI"
+      },
+      "value": "[reference(resourceId('Microsoft.KeyVault/vaults', variables('keyVaultName')), '2024-11-01').vaultUri]"
+    },
+    "resourceId": {
+      "type": "string",
+      "metadata": {
+        "description": "Key Vault resource ID"
+      },
+      "value": "[resourceId('Microsoft.KeyVault/vaults', variables('keyVaultName'))]"
+    },
+    "name": {
+      "type": "string",
+      "metadata": {
+        "description": "Key Vault name"
+      },
+      "value": "[variables('keyVaultName')]"
+    },
+    "storageConnectionStringRef": {
+      "type": "string",
+      "metadata": {
+        "description": "Key Vault reference for storage connection string"
+      },
+      "value": "[if(variables('hasStorageSecret'), format('@Microsoft.KeyVault(VaultName={0};SecretName=storage-connection-string)', variables('keyVaultName')), '')]"
+    },
+    "docIntelApiKeyRef": {
+      "type": "string",
+      "metadata": {
+        "description": "Key Vault reference for Document Intelligence API key"
+      },
+      "value": "[if(variables('hasDocIntelSecret'), format('@Microsoft.KeyVault(VaultName={0};SecretName=doc-intel-api-key)', variables('keyVaultName')), '')]"
+    },
+    "cosmosConnectionStringRef": {
+      "type": "string",
+      "metadata": {
+        "description": "Key Vault reference for Cosmos DB connection string"
+      },
+      "value": "[if(variables('hasCosmosSecret'), format('@Microsoft.KeyVault(VaultName={0};SecretName=cosmos-connection-string)', variables('keyVaultName')), '')]"
+    }
+  }
+}

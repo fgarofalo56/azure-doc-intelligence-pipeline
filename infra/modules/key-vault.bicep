@@ -29,8 +29,31 @@ param logAnalyticsWorkspaceId string = ''
 @description('Enable diagnostic settings')
 param enableDiagnostics bool = true
 
+// =============================================================================
+// SECURITY HARDENING PARAMETERS
+// =============================================================================
+
+@description('Enable network hardening (restrict public access). For production, set to true and use Private Endpoints.')
+param enableNetworkHardening bool = environment == 'prod'
+
+@description('Allowed IP addresses when network hardening is enabled (CIDR notation). Empty means Private Endpoint only.')
+param allowedIpRanges array = []
+
+@description('Allowed subnet resource IDs for VNet service endpoints')
+param allowedSubnetIds array = []
+
 // Key Vault name (3-24 chars, alphanumeric and hyphens)
 var keyVaultName = '${prefix}-kv-${environment}'
+
+// Build IP rules array from allowed IP ranges
+var ipRules = [for ip in allowedIpRanges: {
+  value: ip
+}]
+
+// Build virtual network rules array from subnet IDs
+var virtualNetworkRules = [for subnetId in allowedSubnetIds: {
+  id: subnetId
+}]
 
 resource keyVault 'Microsoft.KeyVault/vaults@2024-11-01' = {
   name: keyVaultName
@@ -46,10 +69,13 @@ resource keyVault 'Microsoft.KeyVault/vaults@2024-11-01' = {
     enableSoftDelete: true
     softDeleteRetentionInDays: 90
     enablePurgeProtection: environment == 'prod'
-    publicNetworkAccess: 'Enabled'
+    // Network hardening: Disable public access in prod, enable in dev
+    publicNetworkAccess: enableNetworkHardening ? 'Disabled' : 'Enabled'
     networkAcls: {
-      defaultAction: 'Allow'
+      defaultAction: enableNetworkHardening ? 'Deny' : 'Allow'
       bypass: 'AzureServices'
+      ipRules: enableNetworkHardening ? ipRules : []
+      virtualNetworkRules: enableNetworkHardening ? virtualNetworkRules : []
     }
   }
 }

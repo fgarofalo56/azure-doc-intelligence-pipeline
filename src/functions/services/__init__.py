@@ -4,7 +4,15 @@ Implements pseudo-dependency injection with singleton pattern.
 Services are initialized once and reused for the function lifetime.
 """
 
-from .blob_service import BlobService
+from .blob_service import (
+    MAX_BLOB_SIZE_BYTES,
+    BlobService,
+    BlobServiceError,
+    ParsedBlobUrl,
+    parse_blob_url_components,
+    sanitize_blob_url,
+    validate_blob_name,
+)
 from .cosmos_service import CosmosService
 from .document_service import DocumentService
 from .logging_service import (
@@ -39,7 +47,83 @@ from .profiles import (
 )
 from .rate_limiter import RateLimitConfig, RateLimiter, get_rate_limiter
 from .telemetry_service import TelemetryService, get_telemetry_service
-from .webhook_service import WebhookService, get_webhook_service
+from .webhook_service import (
+    WEBHOOK_FAILURES_CONTAINER,
+    WebhookDeliveryRecord,
+    WebhookError,
+    WebhookService,
+    calculate_retry_delay,
+    compute_hmac_signature,
+    get_webhook_service,
+    reset_webhook_service,
+)
+from .cache_service import CacheError, CacheResult, CacheService, get_cache_service
+from .api_versioning import (
+    CURRENT_VERSION,
+    SUPPORTED_VERSIONS,
+    APIVersion,
+    VersionInfo,
+    add_version_headers,
+    extract_version_from_route,
+    get_api_versions_info,
+    get_deprecation_headers,
+    get_version_info,
+    is_version_deprecated,
+    is_version_supported,
+    version_gate,
+    versioned_error_response,
+    versioned_response,
+)
+from .circuit_breaker import (
+    CircuitBreaker,
+    CircuitBreakerConfig,
+    CircuitBreakerError,
+    CircuitBreakerOpen,
+    CircuitBreakerState,
+    CircuitBreakerStats,
+    circuit_breaker_decorator,
+    get_all_circuit_breaker_status,
+    get_circuit_breaker,
+    get_circuit_breaker_sync,
+    reset_circuit_breakers,
+)
+from .dead_letter_queue import (
+    DeadLetterItem,
+    DeadLetterQueueError,
+    DeadLetterQueueService,
+    DeadLetterReason,
+    DeadLetterStatus,
+    get_dead_letter_queue_service,
+    reset_dead_letter_queue_service,
+)
+
+# Re-export DLQ types at package level for convenience
+__dlq_exports__ = [
+    "DeadLetterItem",
+    "DeadLetterQueueError",
+    "DeadLetterQueueService",
+    "DeadLetterReason",
+    "DeadLetterStatus",
+    "get_dead_letter_queue_service",
+    "reset_dead_letter_queue_service",
+]
+from .audit_service import (
+    AuditAction,
+    AuditEntry,
+    AuditService,
+    AuditServiceError,
+    AuditStatus,
+    get_audit_service,
+    redact_sensitive_data,
+    reset_audit_service,
+)
+from .shutdown_manager import (
+    ProcessingCheckpoint,
+    ShutdownManager,
+    ShutdownState,
+    get_shutdown_manager,
+    reset_shutdown_manager,
+)
 
 # Global service instances
 _document_service: DocumentService | None = None
@@ -138,6 +222,7 @@ __all__ = [
     "DocumentService",
     "CosmosService",
     "BlobService",
+    "BlobServiceError",
     "PdfService",
     "PdfSplitError",
     "FormBoundary",
@@ -153,7 +238,17 @@ __all__ = [
     "ProcessingProfile",
     "FieldValidation",
     "IdempotencyResult",
+    "CacheService",
+    "CacheResult",
+    "CacheError",
     "PROCESSING_VERSION",
+    "CURRENT_VERSION",
+    "SUPPORTED_VERSIONS",
+    "MAX_BLOB_SIZE_BYTES",
+    "ParsedBlobUrl",
+    "parse_blob_url_components",
+    "APIVersion",
+    "VersionInfo",
     "get_document_service",
     "get_cosmos_service",
     "get_blob_service",
@@ -161,6 +256,7 @@ __all__ = [
     "get_telemetry_service",
     "get_webhook_service",
     "get_job_service",
+    "get_cache_service",
     "get_structured_logger",
     "configure_json_logging",
     "get_rate_limiter",
@@ -172,6 +268,55 @@ __all__ = [
     "check_idempotency",
     "check_and_generate_idempotency",
     "create_idempotent_document",
+    "add_version_headers",
+    "extract_version_from_route",
+    "get_api_versions_info",
+    "get_deprecation_headers",
+    "get_version_info",
+    "is_version_deprecated",
+    "is_version_supported",
+    "version_gate",
+    "versioned_error_response",
+    "versioned_response",
+    "sanitize_blob_url",
+    "validate_blob_name",
     "reset_services",
     "reset_job_service",
+    "CircuitBreaker",
+    "CircuitBreakerConfig",
+    "CircuitBreakerError",
+    "CircuitBreakerOpen",
+    "CircuitBreakerState",
+    "CircuitBreakerStats",
+    "circuit_breaker_decorator",
+    "get_all_circuit_breaker_status",
+    "get_circuit_breaker",
+    "get_circuit_breaker_sync",
+    "reset_circuit_breakers",
+    "DeadLetterItem",
+    "DeadLetterQueueError",
+    "DeadLetterQueueService",
+    "DeadLetterReason",
+    "DeadLetterStatus",
+    "get_dead_letter_queue_service",
+    "reset_dead_letter_queue_service",
+    "AuditAction",
+    "AuditEntry",
+    "AuditService",
+    "AuditServiceError",
+    "AuditStatus",
+    "get_audit_service",
+    "redact_sensitive_data",
+    "reset_audit_service",
+    "WebhookError",
+    "WebhookDeliveryRecord",
+    "WEBHOOK_FAILURES_CONTAINER",
+    "compute_hmac_signature",
+    "calculate_retry_delay",
+    "reset_webhook_service",
+    "ProcessingCheckpoint",
+    "ShutdownManager",
+    "ShutdownState",
+    "get_shutdown_manager",
+    "reset_shutdown_manager",
 ]

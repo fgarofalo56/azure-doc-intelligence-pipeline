@@ -15,6 +15,7 @@
 | [🖥️ Studio Walkthrough](./guides/document-intelligence-studio-walkthrough.md) | Step-by-step Document Intelligence Studio guide |
 | [⚙️ Configuration Guide](./guides/configuration.md) | Environment variables and settings |
 | [🔧 Troubleshooting](./guides/troubleshooting.md) | Common issues and solutions |
+| [🔄 Disaster Recovery](./guides/disaster-recovery.md) | Backup, restore, and business continuity |
 
 ### 🔷 Azure Services
 
@@ -49,6 +50,7 @@
 ### For Operations
 
 - [Deployment Guide](./guides/deployment.md) - Infrastructure deployment
+- [Disaster Recovery](./guides/disaster-recovery.md) - Backup and restore procedures
 - [Azure Services](./azure-services/README.md) - Service configuration
 - [Troubleshooting](./guides/troubleshooting.md) - Common issues
 
@@ -152,6 +154,7 @@ docs/
 │   ├── getting-started.md                 # Quick start guide
 │   ├── deployment.md                      # Deployment instructions
 │   ├── configuration.md                   # Environment variables
+│   ├── disaster-recovery.md               # Backup & DR procedures
 │   └── troubleshooting.md                 # Common issues & solutions
 ├── azure-services/
 │   └── README.md                          # Services overview

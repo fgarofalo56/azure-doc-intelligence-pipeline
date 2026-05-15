@@ -1,12 +1,14 @@
 """Cosmos DB service for document storage.
 
 Implements async Cosmos DB operations with proper partition key handling.
+Uses connection pooling for improved performance.
 """
 
+import asyncio
 import logging
 from typing import Any
 
-from azure.cosmos.aio import CosmosClient
+from azure.cosmos.aio import ContainerProxy, CosmosClient
 from azure.cosmos.exceptions import CosmosHttpResponseError
 from azure.identity.aio import DefaultAzureCredential
 
@@ -23,7 +25,12 @@ class CosmosError(Exception):
 
 
 class CosmosService:
-    """Async Cosmos DB service for document persistence."""
+    """Async Cosmos DB service for document persistence.
+
+    Uses connection pooling with lazy initialization for improved performance.
+    The client is created once and reused for all operations, avoiding the
+    100-200ms overhead of creating a new connection per operation.
+    """
 
     def __init__(
         self,
@@ -43,6 +50,45 @@ class CosmosService:
         self.container_name = container_name
         # Use managed identity for authentication
         self.credential = DefaultAzureCredential()
+        # Connection pooling - client is created lazily and reused
+        self._client: CosmosClient | None = None
+        self._container: ContainerProxy | None = None
+        self._lock = asyncio.Lock()
+
+    async def _get_container(self) -> ContainerProxy:
+        """Get or create the container client with connection pooling.
+
+        Uses a lock to ensure thread-safe lazy initialization.
+
+        Returns:
+            ContainerProxy: The Cosmos DB container client.
+        """
+        if self._container is None:
+            async with self._lock:
+                # Double-check after acquiring lock
+                if self._container is None:
+                    logger.debug("Initializing Cosmos DB client connection pool")
+                    self._client = CosmosClient(
+                        url=self.endpoint,
+                        credential=self.credential,
+                    )
+                    database = self._client.get_database_client(self.database_name)
+                    self._container = database.get_container_client(self.container_name)
+                    logger.info(
+                        f"Cosmos DB connection pool initialized for {self.database_name}/{self.container_name}"
+                    )
+        return self._container
+
+    async def close(self) -> None:
+        """Close the Cosmos DB client connection.
+
+        Should be called when the service is no longer needed to release resources.
+        """
+        if self._client is not None:
+            await self._client.close()
+            self._client = None
+            self._container = None
+            logger.info("Cosmos DB connection pool closed")
 
     async def save_document_result(self, document: dict[str, Any]) -> dict[str, Any]:
         """Save document processing result to Cosmos DB.
@@ -71,18 +117,13 @@ class CosmosService:
             document["id"] = str(document["id"])
 
         try:
-            async with CosmosClient(
-                url=self.endpoint,
-                credential=self.credential,
-            ) as client:
-                database = client.get_database_client(self.database_name)
-                container = database.get_container_client(self.container_name)
+            container = await self._get_container()
 
-                # Upsert (insert or update)
-                result = await container.upsert_item(body=document)
+            # Upsert (insert or update)
+            result = await container.upsert_item(body=document)
 
-                logger.info(f"Saved document {document['id']} to Cosmos DB")
-                return result
+            logger.info(f"Saved document {document['id']} to Cosmos DB")
+            return result
 
         except CosmosHttpResponseError as e:
             logger.error(f"Cosmos DB error: {e.message}")
@@ -111,18 +152,13 @@ class CosmosService:
             CosmosError: If read operation fails (except 404).
         """
         try:
-            async with CosmosClient(
-                url=self.endpoint,
-                credential=self.credential,
-            ) as client:
-                database = client.get_database_client(self.database_name)
-                container = database.get_container_client(self.container_name)
+            container = await self._get_container()
 
-                result = await container.read_item(
-                    item=doc_id,
-                    partition_key=partition_key,
-                )
-                return result
+            result = await container.read_item(
+                item=doc_id,
+                partition_key=partition_key,
+            )
+            return result
 
         except CosmosHttpResponseError as e:
             if e.status_code == 404:
@@ -156,25 +192,20 @@ class CosmosService:
             CosmosError: If query fails.
         """
         try:
-            async with CosmosClient(
-                url=self.endpoint,
-                credential=self.credential,
-            ) as client:
-                database = client.get_database_client(self.database_name)
-                container = database.get_container_client(self.container_name)
+            container = await self._get_container()
 
-                query_params = parameters or []
-                items = []
+            query_params = parameters or []
+            items = []
 
-                # CRITICAL: Use partition_key to avoid expensive cross-partition queries
-                async for item in container.query_items(
-                    query=query,
-                    parameters=query_params,
-                    partition_key=partition_key,
-                ):
-                    items.append(item)
+            # CRITICAL: Use partition_key to avoid expensive cross-partition queries
+            async for item in container.query_items(
+                query=query,
+                parameters=query_params,
+                partition_key=partition_key,
+            ):
+                items.append(item)
 
-                return items
+            return items
 
         except CosmosHttpResponseError as e:
             logger.error(f"Cosmos DB query error: {e.message}")
@@ -241,19 +272,14 @@ class CosmosService:
             CosmosError: If delete operation fails.
         """
         try:
-            async with CosmosClient(
-                url=self.endpoint,
-                credential=self.credential,
-            ) as client:
-                database = client.get_database_client(self.database_name)
-                container = database.get_container_client(self.container_name)
+            container = await self._get_container()
 
-                await container.delete_item(
-                    item=doc_id,
-                    partition_key=partition_key,
-                )
-                logger.info(f"Deleted document {doc_id}")
-                return True
+            await container.delete_item(
+                item=doc_id,
+                partition_key=partition_key,
+            )
+            logger.info(f"Deleted document {doc_id}")
+            return True
 
         except CosmosHttpResponseError as e:
             if e.status_code == 404:

@@ -29,19 +29,93 @@ services:
       timeout: 10s
       retries: 3
       start_period: 10s
+    profiles:
+      - app
 
-  # Optional: Azurite for local storage emulation
+  # =============================================================================
+  # EMULATORS FOR LOCAL DEVELOPMENT AND CI TESTING
+  # =============================================================================
+
+  # Azurite - Azure Storage Emulator
   azurite:
-    image: mcr.microsoft.com/azure-storage/azurite
+    image: mcr.microsoft.com/azure-storage/azurite:latest
+    container_name: azurite
+    hostname: azurite
     ports:
       - "10000:10000"  # Blob
       - "10001:10001"  # Queue
       - "10002:10002"  # Table
     volumes:
       - azurite-data:/data
-    command: azurite --blobHost 0.0.0.0 --queueHost 0.0.0.0 --tableHost 0.0.0.0
+    command: azurite --blobHost 0.0.0.0 --queueHost 0.0.0.0 --tableHost 0.0.0.0 --location /data --loose --skipApiVersionCheck
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "10000"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
     profiles:
-      - local
+      - emulators
+      - test
+
+  # Cosmos DB Emulator (Linux version)
+  # Note: The Linux emulator requires specific settings for proper operation
+  cosmos-emulator:
+    image: mcr.microsoft.com/cosmosdb/linux/azure-cosmos-emulator:latest
+    container_name: cosmos-emulator
+    hostname: cosmos-emulator
+    ports:
+      - "8081:8081"     # Direct connection
+      - "10250:10250"   # Compute emulator
+      - "10251:10251"   # SDK
+      - "10252:10252"   # SDK
+      - "10253:10253"   # SDK
+      - "10254:10254"   # SDK
+    environment:
+      # Required for Linux emulator
+      - AZURE_COSMOS_EMULATOR_PARTITION_COUNT=10
+      - AZURE_COSMOS_EMULATOR_ENABLE_DATA_PERSISTENCE=true
+      - AZURE_COSMOS_EMULATOR_IP_ADDRESS_OVERRIDE=127.0.0.1
+    volumes:
+      - cosmos-data:/data/db
+    healthcheck:
+      test: ["CMD-SHELL", "curl -k https://localhost:8081/_explorer/emulator.pem || exit 1"]
+      interval: 30s
+      timeout: 15s
+      retries: 10
+      start_period: 60s
+    profiles:
+      - emulators
+      - test
 
 volumes:
   azurite-data:
+    driver: local
+  cosmos-data:
+    driver: local
+
+# =============================================================================
+# USAGE INSTRUCTIONS
+# =============================================================================
+#
+# Start all emulators for testing:
+#   docker compose --profile emulators up -d
+#
+# Start only Azurite (storage emulator):
+#   docker compose up azurite -d
+#
+# Start the function app with real Azure services:
+#   docker compose --profile app up -d
+#
+# Run integration tests with emulators:
+#   docker compose --profile test up -d
+#   RUN_EMULATOR_TESTS=1 uv run pytest tests/integration/ -m emulator
+#
+# Stop all services:
+#   docker compose --profile emulators down
+#
+# View logs:
+#   docker compose logs -f azurite
+#   docker compose logs -f cosmos-emulator
+#
+# =============================================================================

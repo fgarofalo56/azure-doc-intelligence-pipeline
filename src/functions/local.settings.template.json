@@ -25,6 +25,10 @@
     "DEAD_LETTER_CONTAINER": "dead-letter",
     "MAX_RETRY_ATTEMPTS": "3",
 
+    "DLQ_RETRY_SCHEDULE": "0 */15 * * * *",
+    "DLQ_RETRY_BATCH_SIZE": "10",
+    "DLQ_RETRY_ENABLED": "true",
+
     "APPINSIGHTS_INSTRUMENTATIONKEY": ""
   },
   "Host": {

@@ -177,6 +177,15 @@ param logAnalyticsRetentionDays int = 30
 @allowed(['Free', 'PerGB2018', 'PerNode', 'Premium', 'Standalone', 'Standard'])
 param logAnalyticsSku string = 'PerGB2018'
 
+@description('Deploy Azure Monitor workbook dashboard')
+param deployMonitorWorkbook bool = true
+
+@description('Deploy Azure Monitor alert rules')
+param deployAlertRules bool = true
+
+@description('Action group resource ID for alert notifications (leave empty to create default)')
+param alertActionGroupId string = ''
+
 // =============================================================================
 // SYNAPSE GITHUB INTEGRATION
 // =============================================================================
@@ -267,6 +276,62 @@ resource existingLogAnalyticsCrossSub 'Microsoft.OperationalInsights/workspaces@
 var logAnalyticsWorkspaceId = !enableDiagnostics ? '' : (existingLogAnalyticsWorkspaceName == ''
   ? logAnalyticsNew!.outputs.workspaceId
   : (isLogAnalyticsCrossSubscription ? existingLogAnalyticsCrossSub.id : existingLogAnalyticsSameSub.id))
+
+// =============================================================================
+// AZURE MONITOR WORKBOOK
+// =============================================================================
+
+// Deploy Azure Monitor Workbook dashboard for pipeline monitoring
+// Condition uses only compile-time values to avoid BCP177 error
+module monitorWorkbook 'modules/monitor-workbook.bicep' = if (deployMonitorWorkbook && enableDiagnostics) {
+  name: 'monitor-workbook-deployment'
+  scope: rg
+  params: {
+    prefix: prefix
+    location: location
+    environment: environment
+    tags: tags
+    logAnalyticsWorkspaceId: logAnalyticsWorkspaceId
+  }
+}
+
+// =============================================================================
+// AZURE MONITOR ALERT RULES
+// =============================================================================
+
+// Deploy alert rules for new deployment (after function app is created)
+module alertRulesNew 'modules/alert-rules.bicep' = if (deployAlertRules && deploymentMode == 'new' && shouldDeployFunctionApp) {
+  name: 'alert-rules-deployment'
+  scope: rg
+  params: {
+    prefix: prefix
+    location: location
+    environment: environment
+    tags: tags
+    appInsightsResourceId: functionAppNew!.outputs.appInsightsId
+    functionAppResourceId: functionAppNew!.outputs.resourceId
+    cosmosDbResourceId: cosmosNew!.outputs.resourceId
+    actionGroupId: alertActionGroupId
+    enableAlerts: true
+  }
+}
+
+// Deploy alert rules for existing deployment
+module alertRulesExisting 'modules/alert-rules.bicep' = if (deployAlertRules && deploymentMode == 'existing' && shouldDeployFunctionApp) {
+  name: 'alert-rules-existing-deployment'
+  scope: rg
+  params: {
+    prefix: prefix
+    location: location
+    environment: environment
+    tags: tags
+    appInsightsResourceId: functionAppExisting!.outputs.appInsightsId
+    functionAppResourceId: functionAppExisting!.outputs.resourceId
+    cosmosDbResourceId: existingCosmos.id
+    actionGroupId: alertActionGroupId
+    enableAlerts: true
+  }
+}
 
 // =============================================================================
 // NEW RESOURCES DEPLOYMENT (deploymentMode == 'new')
@@ -585,3 +650,17 @@ output diagnosticsEnabled bool = enableDiagnostics
 
 @description('App Service Plan SKU')
 output appServicePlanSkuOutput string = appServicePlanSku
+
+@description('Monitor workbook name')
+output monitorWorkbookName string = deployMonitorWorkbook && enableDiagnostics ? monitorWorkbook.outputs.name : 'not-deployed'
+
+@description('Monitor workbook resource ID')
+output monitorWorkbookResourceId string = deployMonitorWorkbook && enableDiagnostics ? monitorWorkbook.outputs.resourceId : ''
+
+@description('Alert rules action group ID')
+output alertActionGroupId string = deployAlertRules && shouldDeployFunctionApp
+  ? (deploymentMode == 'new' ? alertRulesNew.outputs.actionGroupId : alertRulesExisting.outputs.actionGroupId)
+  : ''
+
+@description('Alert rules deployed')
+output alertRulesDeployed bool = deployAlertRules && shouldDeployFunctionApp

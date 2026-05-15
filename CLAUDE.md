@@ -195,7 +195,8 @@ azure-doc-intel-pipeline/
 │   │   ├── function-app.bicep
 │   │   ├── key-vault.bicep
 │   │   ├── log-analytics.bicep
-│   │   └── role-assignment.bicep        # Cross-RG role assignments
+│   │   ├── role-assignment.bicep        # Cross-RG role assignments
+│   │   └── private-endpoints.bicep      # Private Endpoints for secure connectivity
 │   └── parameters/                      # Environment configs
 │       ├── dev.bicepparam               # New deployment (dev)
 │       ├── prod.bicepparam              # New deployment (prod)
@@ -336,6 +337,62 @@ output storageAccountName string = storage.outputs.name
 - **Conditional outputs**: Check if module deployed before accessing
 - **Cross-RG references**: Use `scope: resourceGroup(rgName)` for resources in different RGs
 - **Cross-subscription**: Use `scope: resourceGroup(subscriptionId, rgName)` for cross-subscription
+
+### Security Hardening (Infrastructure)
+The following Bicep modules support security hardening parameters:
+
+**Storage (`storage.bicep`):**
+- `enableNetworkHardening`: Sets `networkAcls.defaultAction` to 'Deny' (default: true for prod)
+- `allowedIpRanges`: Array of CIDR ranges for allowed access
+- `allowedSubnetIds`: Array of subnet resource IDs for VNet service endpoints
+
+**Key Vault (`key-vault.bicep`):**
+- `enableNetworkHardening`: Sets `publicNetworkAccess` to 'Disabled' (default: true for prod)
+- `allowedIpRanges`: Array of CIDR ranges for allowed access
+- `allowedSubnetIds`: Array of subnet resource IDs
+
+**Cosmos DB (`cosmos-db.bicep`):**
+- `enableNetworkHardening`: Sets `publicNetworkAccess` to 'Disabled' and enables VNet filtering (default: true for prod)
+- `allowedIpRanges`: Array of CIDR ranges for allowed access (uses `ipRules` property)
+- `allowedSubnetIds`: Array of subnet resource IDs for VNet service endpoints
+
+**Function App (`function-app.bicep`):**
+- `enableNetworkHardening`: Enables VNet integration (requires non-Consumption plan)
+- `vnetIntegrationSubnetId`: Subnet resource ID for outbound VNet integration
+- `publicNetworkAccess`: 'Enabled' or 'Disabled' (for Private Endpoint only access)
+- `scmAllowedIpRanges`: Array of CIDR ranges allowed for deployment site
+
+**Private Endpoints (`private-endpoints.bicep`):**
+Creates Private Endpoints for secure connectivity to Azure services. Parameters:
+- `vnetId`: Virtual Network resource ID
+- `privateEndpointSubnetId`: Subnet for private endpoints (must have `privateEndpointNetworkPolicies: Disabled`)
+- `createPrivateDnsZones`: Create DNS zones (set false if using centralized DNS)
+- Resource-specific parameters (provide to create endpoint):
+  - Storage: `storageAccountId`, `storageAccountName`
+  - Cosmos DB: `cosmosAccountId`, `cosmosAccountName`
+  - Key Vault: `keyVaultId`, `keyVaultName`
+
+**Example production deployment:**
+```bicep
+// In parameters file for production
+param enableNetworkHardening = true
+param allowedIpRanges = ['203.0.113.0/24']  // Corporate IP range
+param allowedSubnetIds = ['/subscriptions/.../subnets/app-subnet']
+
+// For private endpoints (most secure)
+module privateEndpoints 'modules/private-endpoints.bicep' = {
+  params: {
+    vnetId: vnet.id
+    privateEndpointSubnetId: peSubnet.id
+    storageAccountId: storage.outputs.resourceId
+    storageAccountName: storage.outputs.name
+    cosmosAccountId: cosmos.outputs.resourceId
+    cosmosAccountName: cosmos.outputs.name
+    keyVaultId: keyVault.outputs.resourceId
+    keyVaultName: keyVault.outputs.name
+  }
+}
+```
 
 ---
 

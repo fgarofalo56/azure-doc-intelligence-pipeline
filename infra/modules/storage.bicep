@@ -16,8 +16,33 @@ param logAnalyticsWorkspaceId string = ''
 @description('Enable diagnostic settings')
 param enableDiagnostics bool = true
 
+// =============================================================================
+// SECURITY HARDENING PARAMETERS
+// =============================================================================
+
+@description('Enable network hardening (restrict public access). For production, consider setting to true.')
+param enableNetworkHardening bool = environment == 'prod'
+
+@description('Allowed IP addresses when network hardening is enabled (CIDR notation). Empty list means only VNet/Private Endpoint access.')
+param allowedIpRanges array = []
+
+@description('Allowed subnet resource IDs for VNet service endpoints')
+param allowedSubnetIds array = []
+
 // Storage account name: lowercase, no hyphens, 3-24 chars
 var storageAccountName = toLower('${prefix}st${uniqueString(resourceGroup().id)}')
+
+// Build IP rules array from allowed IP ranges
+var ipRules = [for ip in allowedIpRanges: {
+  value: ip
+  action: 'Allow'
+}]
+
+// Build virtual network rules array from subnet IDs
+var virtualNetworkRules = [for subnetId in allowedSubnetIds: {
+  id: subnetId
+  action: 'Allow'
+}]
 
 resource storageAccount 'Microsoft.Storage/storageAccounts@2024-01-01' = {
   name: storageAccountName
@@ -32,10 +57,15 @@ resource storageAccount 'Microsoft.Storage/storageAccounts@2024-01-01' = {
     allowBlobPublicAccess: false
     minimumTlsVersion: 'TLS1_2'
     supportsHttpsTrafficOnly: true
+    // Network hardening: Deny by default in prod, Allow in dev
     networkAcls: {
-      defaultAction: 'Allow'
+      defaultAction: enableNetworkHardening ? 'Deny' : 'Allow'
       bypass: 'AzureServices'
+      ipRules: enableNetworkHardening ? ipRules : []
+      virtualNetworkRules: enableNetworkHardening ? virtualNetworkRules : []
     }
+    // Allow shared key access only if network hardening is disabled (for Function App compatibility)
+    allowSharedKeyAccess: true
     encryption: {
       services: {
         blob: {

@@ -1,0 +1,630 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.39.26.7824",
+      "templateHash": "6385711673118192624"
+    }
+  },
+  "parameters": {
+    "prefix": {
+      "type": "string",
+      "metadata": {
+        "description": "Prefix for resource naming"
+      }
+    },
+    "location": {
+      "type": "string",
+      "defaultValue": "[resourceGroup().location]",
+      "metadata": {
+        "description": "Azure region for deployment"
+      }
+    },
+    "environment": {
+      "type": "string",
+      "metadata": {
+        "description": "Environment name (dev, prod)"
+      }
+    },
+    "tags": {
+      "type": "object",
+      "defaultValue": {},
+      "metadata": {
+        "description": "Tags to apply to resources"
+      }
+    },
+    "appInsightsResourceId": {
+      "type": "string",
+      "metadata": {
+        "description": "Application Insights resource ID"
+      }
+    },
+    "functionAppResourceId": {
+      "type": "string",
+      "metadata": {
+        "description": "Function App resource ID"
+      }
+    },
+    "actionGroupId": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Action group resource ID for alert notifications"
+      }
+    },
+    "enableAlerts": {
+      "type": "bool",
+      "defaultValue": true,
+      "metadata": {
+        "description": "Enable alert rules"
+      }
+    },
+    "cosmosDbResourceId": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Cosmos DB account resource ID (for DLQ monitoring)"
+      }
+    },
+    "errorRateThreshold": {
+      "type": "int",
+      "defaultValue": 5,
+      "metadata": {
+        "description": "Error rate threshold percentage (default: 5%)"
+      }
+    },
+    "responseTimeThreshold": {
+      "type": "int",
+      "defaultValue": 30,
+      "metadata": {
+        "description": "Response time threshold in seconds (default: 30s)"
+      }
+    },
+    "cpuThreshold": {
+      "type": "int",
+      "defaultValue": 80,
+      "metadata": {
+        "description": "CPU usage threshold percentage (default: 80%)"
+      }
+    },
+    "memoryThreshold": {
+      "type": "int",
+      "defaultValue": 85,
+      "metadata": {
+        "description": "Memory usage threshold percentage (default: 85%)"
+      }
+    },
+    "dlqDepthThreshold": {
+      "type": "int",
+      "defaultValue": 10,
+      "metadata": {
+        "description": "Dead letter queue depth threshold (default: 10)"
+      }
+    },
+    "restartThreshold": {
+      "type": "int",
+      "defaultValue": 3,
+      "metadata": {
+        "description": "Function app restart threshold count in 1 hour (default: 3)"
+      }
+    }
+  },
+  "variables": {
+    "effectiveActionGroupId": "[if(not(equals(parameters('actionGroupId'), '')), parameters('actionGroupId'), resourceId('Microsoft.Insights/actionGroups', format('{0}-alerts-{1}', parameters('prefix'), parameters('environment'))))]"
+  },
+  "resources": [
+    {
+      "condition": "[and(parameters('enableAlerts'), equals(parameters('actionGroupId'), ''))]",
+      "type": "Microsoft.Insights/actionGroups",
+      "apiVersion": "2023-01-01",
+      "name": "[format('{0}-alerts-{1}', parameters('prefix'), parameters('environment'))]",
+      "location": "Global",
+      "tags": "[parameters('tags')]",
+      "properties": {
+        "groupShortName": "[format('{0}alerts', parameters('prefix'))]",
+        "enabled": true,
+        "emailReceivers": [],
+        "smsReceivers": [],
+        "webhookReceivers": []
+      }
+    },
+    {
+      "condition": "[parameters('enableAlerts')]",
+      "type": "Microsoft.Insights/metricAlerts",
+      "apiVersion": "2018-03-01",
+      "name": "[format('{0}-alert-error-rate-{1}', parameters('prefix'), parameters('environment'))]",
+      "location": "Global",
+      "tags": "[parameters('tags')]",
+      "properties": {
+        "description": "[format('Alert when error rate exceeds {0}%', parameters('errorRateThreshold'))]",
+        "severity": 1,
+        "enabled": true,
+        "scopes": [
+          "[parameters('appInsightsResourceId')]"
+        ],
+        "evaluationFrequency": "PT5M",
+        "windowSize": "PT15M",
+        "criteria": {
+          "odata.type": "Microsoft.Azure.Monitor.SingleResourceMultipleMetricCriteria",
+          "allOf": [
+            {
+              "name": "HighErrorRate",
+              "metricName": "requests/failed",
+              "metricNamespace": "microsoft.insights/components",
+              "operator": "GreaterThan",
+              "threshold": "[parameters('errorRateThreshold')]",
+              "timeAggregation": "Count",
+              "criterionType": "StaticThresholdCriterion"
+            }
+          ]
+        },
+        "actions": "[if(or(not(equals(parameters('actionGroupId'), '')), not(parameters('enableAlerts'))), createArray(createObject('actionGroupId', variables('effectiveActionGroupId'), 'webHookProperties', createObject())), createArray())]"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Insights/actionGroups', format('{0}-alerts-{1}', parameters('prefix'), parameters('environment')))]"
+      ]
+    },
+    {
+      "condition": "[parameters('enableAlerts')]",
+      "type": "Microsoft.Insights/metricAlerts",
+      "apiVersion": "2018-03-01",
+      "name": "[format('{0}-alert-response-time-{1}', parameters('prefix'), parameters('environment'))]",
+      "location": "Global",
+      "tags": "[parameters('tags')]",
+      "properties": {
+        "description": "[format('Alert when response time exceeds {0} seconds', parameters('responseTimeThreshold'))]",
+        "severity": 2,
+        "enabled": true,
+        "scopes": [
+          "[parameters('appInsightsResourceId')]"
+        ],
+        "evaluationFrequency": "PT5M",
+        "windowSize": "PT15M",
+        "criteria": {
+          "odata.type": "Microsoft.Azure.Monitor.SingleResourceMultipleMetricCriteria",
+          "allOf": [
+            {
+              "name": "SlowResponseTime",
+              "metricName": "requests/duration",
+              "metricNamespace": "microsoft.insights/components",
+              "operator": "GreaterThan",
+              "threshold": "[mul(parameters('responseTimeThreshold'), 1000)]",
+              "timeAggregation": "Average",
+              "criterionType": "StaticThresholdCriterion"
+            }
+          ]
+        },
+        "actions": "[if(or(not(equals(parameters('actionGroupId'), '')), not(parameters('enableAlerts'))), createArray(createObject('actionGroupId', variables('effectiveActionGroupId'), 'webHookProperties', createObject())), createArray())]"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Insights/actionGroups', format('{0}-alerts-{1}', parameters('prefix'), parameters('environment')))]"
+      ]
+    },
+    {
+      "condition": "[parameters('enableAlerts')]",
+      "type": "Microsoft.Insights/metricAlerts",
+      "apiVersion": "2018-03-01",
+      "name": "[format('{0}-alert-cpu-{1}', parameters('prefix'), parameters('environment'))]",
+      "location": "Global",
+      "tags": "[parameters('tags')]",
+      "properties": {
+        "description": "[format('Alert when CPU usage exceeds {0}%', parameters('cpuThreshold'))]",
+        "severity": 2,
+        "enabled": true,
+        "scopes": [
+          "[parameters('functionAppResourceId')]"
+        ],
+        "evaluationFrequency": "PT5M",
+        "windowSize": "PT15M",
+        "criteria": {
+          "odata.type": "Microsoft.Azure.Monitor.SingleResourceMultipleMetricCriteria",
+          "allOf": [
+            {
+              "name": "HighCPU",
+              "metricName": "CpuPercentage",
+              "metricNamespace": "Microsoft.Web/sites",
+              "operator": "GreaterThan",
+              "threshold": "[parameters('cpuThreshold')]",
+              "timeAggregation": "Average",
+              "criterionType": "StaticThresholdCriterion"
+            }
+          ]
+        },
+        "actions": "[if(or(not(equals(parameters('actionGroupId'), '')), not(parameters('enableAlerts'))), createArray(createObject('actionGroupId', variables('effectiveActionGroupId'), 'webHookProperties', createObject())), createArray())]"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Insights/actionGroups', format('{0}-alerts-{1}', parameters('prefix'), parameters('environment')))]"
+      ]
+    },
+    {
+      "condition": "[parameters('enableAlerts')]",
+      "type": "Microsoft.Insights/metricAlerts",
+      "apiVersion": "2018-03-01",
+      "name": "[format('{0}-alert-memory-{1}', parameters('prefix'), parameters('environment'))]",
+      "location": "Global",
+      "tags": "[parameters('tags')]",
+      "properties": {
+        "description": "[format('Alert when memory usage exceeds {0}%', parameters('memoryThreshold'))]",
+        "severity": 2,
+        "enabled": true,
+        "scopes": [
+          "[parameters('functionAppResourceId')]"
+        ],
+        "evaluationFrequency": "PT5M",
+        "windowSize": "PT15M",
+        "criteria": {
+          "odata.type": "Microsoft.Azure.Monitor.SingleResourceMultipleMetricCriteria",
+          "allOf": [
+            {
+              "name": "HighMemory",
+              "metricName": "MemoryWorkingSet",
+              "metricNamespace": "Microsoft.Web/sites",
+              "operator": "GreaterThan",
+              "threshold": "[mul(mul(mul(parameters('memoryThreshold'), 1024), 1024), 10)]",
+              "timeAggregation": "Average",
+              "criterionType": "StaticThresholdCriterion"
+            }
+          ]
+        },
+        "actions": "[if(or(not(equals(parameters('actionGroupId'), '')), not(parameters('enableAlerts'))), createArray(createObject('actionGroupId', variables('effectiveActionGroupId'), 'webHookProperties', createObject())), createArray())]"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Insights/actionGroups', format('{0}-alerts-{1}', parameters('prefix'), parameters('environment')))]"
+      ]
+    },
+    {
+      "condition": "[parameters('enableAlerts')]",
+      "type": "Microsoft.Insights/metricAlerts",
+      "apiVersion": "2018-03-01",
+      "name": "[format('{0}-alert-http5xx-{1}', parameters('prefix'), parameters('environment'))]",
+      "location": "Global",
+      "tags": "[parameters('tags')]",
+      "properties": {
+        "description": "Alert on HTTP 5xx server errors",
+        "severity": 1,
+        "enabled": true,
+        "scopes": [
+          "[parameters('functionAppResourceId')]"
+        ],
+        "evaluationFrequency": "PT1M",
+        "windowSize": "PT5M",
+        "criteria": {
+          "odata.type": "Microsoft.Azure.Monitor.SingleResourceMultipleMetricCriteria",
+          "allOf": [
+            {
+              "name": "Http5xxErrors",
+              "metricName": "Http5xx",
+              "metricNamespace": "Microsoft.Web/sites",
+              "operator": "GreaterThan",
+              "threshold": 0,
+              "timeAggregation": "Total",
+              "criterionType": "StaticThresholdCriterion"
+            }
+          ]
+        },
+        "actions": "[if(or(not(equals(parameters('actionGroupId'), '')), not(parameters('enableAlerts'))), createArray(createObject('actionGroupId', variables('effectiveActionGroupId'), 'webHookProperties', createObject())), createArray())]"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Insights/actionGroups', format('{0}-alerts-{1}', parameters('prefix'), parameters('environment')))]"
+      ]
+    },
+    {
+      "condition": "[parameters('enableAlerts')]",
+      "type": "Microsoft.Insights/metricAlerts",
+      "apiVersion": "2018-03-01",
+      "name": "[format('{0}-alert-func-failures-{1}', parameters('prefix'), parameters('environment'))]",
+      "location": "Global",
+      "tags": "[parameters('tags')]",
+      "properties": {
+        "description": "Alert on function execution failures",
+        "severity": 1,
+        "enabled": true,
+        "scopes": [
+          "[parameters('functionAppResourceId')]"
+        ],
+        "evaluationFrequency": "PT1M",
+        "windowSize": "PT5M",
+        "criteria": {
+          "odata.type": "Microsoft.Azure.Monitor.SingleResourceMultipleMetricCriteria",
+          "allOf": [
+            {
+              "name": "FunctionFailures",
+              "metricName": "FunctionExecutionCount",
+              "metricNamespace": "Microsoft.Web/sites",
+              "operator": "GreaterThan",
+              "threshold": 5,
+              "timeAggregation": "Total",
+              "criterionType": "StaticThresholdCriterion",
+              "dimensions": [
+                {
+                  "name": "FunctionName",
+                  "operator": "Include",
+                  "values": [
+                    "*"
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        "actions": "[if(or(not(equals(parameters('actionGroupId'), '')), not(parameters('enableAlerts'))), createArray(createObject('actionGroupId', variables('effectiveActionGroupId'), 'webHookProperties', createObject())), createArray())]"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Insights/actionGroups', format('{0}-alerts-{1}', parameters('prefix'), parameters('environment')))]"
+      ]
+    },
+    {
+      "condition": "[parameters('enableAlerts')]",
+      "type": "Microsoft.Insights/metricAlerts",
+      "apiVersion": "2018-03-01",
+      "name": "[format('{0}-alert-availability-{1}', parameters('prefix'), parameters('environment'))]",
+      "location": "Global",
+      "tags": "[parameters('tags')]",
+      "properties": {
+        "description": "Alert when service availability drops",
+        "severity": 1,
+        "enabled": true,
+        "scopes": [
+          "[parameters('appInsightsResourceId')]"
+        ],
+        "evaluationFrequency": "PT1M",
+        "windowSize": "PT5M",
+        "criteria": {
+          "odata.type": "Microsoft.Azure.Monitor.SingleResourceMultipleMetricCriteria",
+          "allOf": [
+            {
+              "name": "LowAvailability",
+              "metricName": "availabilityResults/availabilityPercentage",
+              "metricNamespace": "microsoft.insights/components",
+              "operator": "LessThan",
+              "threshold": 99,
+              "timeAggregation": "Average",
+              "criterionType": "StaticThresholdCriterion"
+            }
+          ]
+        },
+        "actions": "[if(or(not(equals(parameters('actionGroupId'), '')), not(parameters('enableAlerts'))), createArray(createObject('actionGroupId', variables('effectiveActionGroupId'), 'webHookProperties', createObject())), createArray())]"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Insights/actionGroups', format('{0}-alerts-{1}', parameters('prefix'), parameters('environment')))]"
+      ]
+    },
+    {
+      "condition": "[and(parameters('enableAlerts'), not(equals(parameters('cosmosDbResourceId'), '')))]",
+      "type": "Microsoft.Insights/scheduledQueryRules",
+      "apiVersion": "2023-03-15-preview",
+      "name": "[format('{0}-alert-dlq-depth-{1}', parameters('prefix'), parameters('environment'))]",
+      "location": "[parameters('location')]",
+      "tags": "[parameters('tags')]",
+      "properties": {
+        "displayName": "Dead Letter Queue Depth Alert",
+        "description": "[format('Alert when dead letter queue exceeds {0} items', parameters('dlqDepthThreshold'))]",
+        "severity": 2,
+        "enabled": true,
+        "evaluationFrequency": "PT15M",
+        "scopes": [
+          "[parameters('appInsightsResourceId')]"
+        ],
+        "windowSize": "PT15M",
+        "criteria": {
+          "allOf": [
+            {
+              "query": "            customMetrics\r\n            | where name == \"dlq_depth\" or name == \"dead_letter_queue_depth\"\r\n            | summarize DLQDepth = max(value) by bin(timestamp, 5m)\r\n            | where DLQDepth > ${dlqDepthThreshold}\r\n          ",
+              "timeAggregation": "Count",
+              "operator": "GreaterThan",
+              "threshold": 0,
+              "failingPeriods": {
+                "numberOfEvaluationPeriods": 1,
+                "minFailingPeriodsToAlert": 1
+              }
+            }
+          ]
+        },
+        "actions": {
+          "actionGroups": "[if(or(not(equals(parameters('actionGroupId'), '')), not(parameters('enableAlerts'))), createArray(variables('effectiveActionGroupId')), createArray())]"
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Insights/actionGroups', format('{0}-alerts-{1}', parameters('prefix'), parameters('environment')))]"
+      ]
+    },
+    {
+      "condition": "[parameters('enableAlerts')]",
+      "type": "Microsoft.Insights/scheduledQueryRules",
+      "apiVersion": "2023-03-15-preview",
+      "name": "[format('{0}-alert-restarts-{1}', parameters('prefix'), parameters('environment'))]",
+      "location": "[parameters('location')]",
+      "tags": "[parameters('tags')]",
+      "properties": {
+        "displayName": "Function App Restart Alert",
+        "description": "[format('Alert when function app restarts more than {0} times in 1 hour', parameters('restartThreshold'))]",
+        "severity": 2,
+        "enabled": true,
+        "evaluationFrequency": "PT15M",
+        "scopes": [
+          "[parameters('appInsightsResourceId')]"
+        ],
+        "windowSize": "PT1H",
+        "criteria": {
+          "allOf": [
+            {
+              "query": "            traces\r\n            | where message contains \"Host started\" or message contains \"Host initialized\"\r\n            | summarize RestartCount = count() by bin(timestamp, 1h)\r\n            | where RestartCount > ${restartThreshold}\r\n          ",
+              "timeAggregation": "Count",
+              "operator": "GreaterThan",
+              "threshold": 0,
+              "failingPeriods": {
+                "numberOfEvaluationPeriods": 1,
+                "minFailingPeriodsToAlert": 1
+              }
+            }
+          ]
+        },
+        "actions": {
+          "actionGroups": "[if(or(not(equals(parameters('actionGroupId'), '')), not(parameters('enableAlerts'))), createArray(variables('effectiveActionGroupId')), createArray())]"
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Insights/actionGroups', format('{0}-alerts-{1}', parameters('prefix'), parameters('environment')))]"
+      ]
+    },
+    {
+      "condition": "[parameters('enableAlerts')]",
+      "type": "Microsoft.Insights/scheduledQueryRules",
+      "apiVersion": "2023-03-15-preview",
+      "name": "[format('{0}-alert-circuit-breaker-{1}', parameters('prefix'), parameters('environment'))]",
+      "location": "[parameters('location')]",
+      "tags": "[parameters('tags')]",
+      "properties": {
+        "displayName": "Circuit Breaker Open Alert",
+        "description": "Alert when circuit breaker opens",
+        "severity": 1,
+        "enabled": true,
+        "evaluationFrequency": "PT5M",
+        "scopes": [
+          "[parameters('appInsightsResourceId')]"
+        ],
+        "windowSize": "PT5M",
+        "criteria": {
+          "allOf": [
+            {
+              "query": "            traces\r\n            | where message contains \"circuit breaker\" and (message contains \"opened\" or message contains \"OPEN\")\r\n            | summarize OpenCount = count() by bin(timestamp, 5m)\r\n            | where OpenCount > 0\r\n          ",
+              "timeAggregation": "Count",
+              "operator": "GreaterThan",
+              "threshold": 0,
+              "failingPeriods": {
+                "numberOfEvaluationPeriods": 1,
+                "minFailingPeriodsToAlert": 1
+              }
+            }
+          ]
+        },
+        "actions": {
+          "actionGroups": "[if(or(not(equals(parameters('actionGroupId'), '')), not(parameters('enableAlerts'))), createArray(variables('effectiveActionGroupId')), createArray())]"
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Insights/actionGroups', format('{0}-alerts-{1}', parameters('prefix'), parameters('environment')))]"
+      ]
+    },
+    {
+      "condition": "[parameters('enableAlerts')]",
+      "type": "Microsoft.Insights/scheduledQueryRules",
+      "apiVersion": "2023-03-15-preview",
+      "name": "[format('{0}-alert-doc-processing-{1}', parameters('prefix'), parameters('environment'))]",
+      "location": "[parameters('location')]",
+      "tags": "[parameters('tags')]",
+      "properties": {
+        "displayName": "Document Processing Error Alert",
+        "description": "Alert on document processing failures",
+        "severity": 2,
+        "enabled": true,
+        "evaluationFrequency": "PT5M",
+        "scopes": [
+          "[parameters('appInsightsResourceId')]"
+        ],
+        "windowSize": "PT15M",
+        "criteria": {
+          "allOf": [
+            {
+              "query": "            customEvents\r\n            | where name == \"DocumentProcessingFailed\" or name == \"document_processing_failed\"\r\n            | summarize FailureCount = count() by bin(timestamp, 15m)\r\n            | where FailureCount > 5\r\n          ",
+              "timeAggregation": "Count",
+              "operator": "GreaterThan",
+              "threshold": 0,
+              "failingPeriods": {
+                "numberOfEvaluationPeriods": 1,
+                "minFailingPeriodsToAlert": 1
+              }
+            }
+          ]
+        },
+        "actions": {
+          "actionGroups": "[if(or(not(equals(parameters('actionGroupId'), '')), not(parameters('enableAlerts'))), createArray(variables('effectiveActionGroupId')), createArray())]"
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Insights/actionGroups', format('{0}-alerts-{1}', parameters('prefix'), parameters('environment')))]"
+      ]
+    }
+  ],
+  "outputs": {
+    "actionGroupId": {
+      "type": "string",
+      "metadata": {
+        "description": "Action group resource ID"
+      },
+      "value": "[variables('effectiveActionGroupId')]"
+    },
+    "errorRateAlertId": {
+      "type": "string",
+      "metadata": {
+        "description": "Error rate alert resource ID"
+      },
+      "value": "[if(parameters('enableAlerts'), resourceId('Microsoft.Insights/metricAlerts', format('{0}-alert-error-rate-{1}', parameters('prefix'), parameters('environment'))), '')]"
+    },
+    "responseTimeAlertId": {
+      "type": "string",
+      "metadata": {
+        "description": "Response time alert resource ID"
+      },
+      "value": "[if(parameters('enableAlerts'), resourceId('Microsoft.Insights/metricAlerts', format('{0}-alert-response-time-{1}', parameters('prefix'), parameters('environment'))), '')]"
+    },
+    "cpuAlertId": {
+      "type": "string",
+      "metadata": {
+        "description": "CPU alert resource ID"
+      },
+      "value": "[if(parameters('enableAlerts'), resourceId('Microsoft.Insights/metricAlerts', format('{0}-alert-cpu-{1}', parameters('prefix'), parameters('environment'))), '')]"
+    },
+    "memoryAlertId": {
+      "type": "string",
+      "metadata": {
+        "description": "Memory alert resource ID"
+      },
+      "value": "[if(parameters('enableAlerts'), resourceId('Microsoft.Insights/metricAlerts', format('{0}-alert-memory-{1}', parameters('prefix'), parameters('environment'))), '')]"
+    },
+    "http5xxAlertId": {
+      "type": "string",
+      "metadata": {
+        "description": "HTTP 5xx alert resource ID"
+      },
+      "value": "[if(parameters('enableAlerts'), resourceId('Microsoft.Insights/metricAlerts', format('{0}-alert-http5xx-{1}', parameters('prefix'), parameters('environment'))), '')]"
+    },
+    "availabilityAlertId": {
+      "type": "string",
+      "metadata": {
+        "description": "Availability alert resource ID"
+      },
+      "value": "[if(parameters('enableAlerts'), resourceId('Microsoft.Insights/metricAlerts', format('{0}-alert-availability-{1}', parameters('prefix'), parameters('environment'))), '')]"
+    },
+    "dlqDepthAlertId": {
+      "type": "string",
+      "metadata": {
+        "description": "DLQ depth alert resource ID"
+      },
+      "value": "[if(and(parameters('enableAlerts'), not(equals(parameters('cosmosDbResourceId'), ''))), resourceId('Microsoft.Insights/scheduledQueryRules', format('{0}-alert-dlq-depth-{1}', parameters('prefix'), parameters('environment'))), '')]"
+    },
+    "restartAlertId": {
+      "type": "string",
+      "metadata": {
+        "description": "Restart alert resource ID"
+      },
+      "value": "[if(parameters('enableAlerts'), resourceId('Microsoft.Insights/scheduledQueryRules', format('{0}-alert-restarts-{1}', parameters('prefix'), parameters('environment'))), '')]"
+    },
+    "circuitBreakerAlertId": {
+      "type": "string",
+      "metadata": {
+        "description": "Circuit breaker alert resource ID"
+      },
+      "value": "[if(parameters('enableAlerts'), resourceId('Microsoft.Insights/scheduledQueryRules', format('{0}-alert-circuit-breaker-{1}', parameters('prefix'), parameters('environment'))), '')]"
+    },
+    "docProcessingErrorAlertId": {
+      "type": "string",
+      "metadata": {
+        "description": "Document processing error alert resource ID"
+      },
+      "value": "[if(parameters('enableAlerts'), resourceId('Microsoft.Insights/scheduledQueryRules', format('{0}-alert-doc-processing-{1}', parameters('prefix'), parameters('environment'))), '')]"
+    }
+  }
+}

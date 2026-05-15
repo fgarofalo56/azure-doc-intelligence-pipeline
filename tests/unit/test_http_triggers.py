@@ -404,6 +404,283 @@ class TestHealthCheck:
         assert body["blobTrigger"]["status"] == "unhealthy"
 
 
+class TestHealthLiveness:
+    """Tests for HealthLive HTTP trigger (Kubernetes liveness probe)."""
+
+    @pytest.mark.asyncio
+    async def test_liveness_returns_alive(self):
+        """Test liveness probe returns alive status."""
+        from function_app import health_liveness
+
+        req = create_mock_request(method="GET", body={})
+
+        response = await health_liveness(req)
+
+        assert response.status_code == 200
+        body = json.loads(response.get_body().decode())
+        assert body["status"] == "alive"
+        assert "timestamp" in body
+        assert "version" in body
+
+    @pytest.mark.asyncio
+    async def test_liveness_is_fast(self):
+        """Test liveness probe responds quickly (no external deps)."""
+        import time
+
+        from function_app import health_liveness
+
+        req = create_mock_request(method="GET", body={})
+
+        start = time.time()
+        response = await health_liveness(req)
+        elapsed = time.time() - start
+
+        assert response.status_code == 200
+        # Should respond in under 100ms (no external calls)
+        assert elapsed < 0.1
+
+
+class TestHealthReadiness:
+    """Tests for HealthReady HTTP trigger (Kubernetes readiness probe)."""
+
+    @pytest.mark.asyncio
+    async def test_readiness_all_configured(self):
+        """Test readiness probe when all dependencies configured."""
+        from function_app import health_readiness
+
+        with patch("function_app.get_config") as mock_config_fn, \
+             patch("function_app.get_blob_service") as mock_blob_fn, \
+             patch("function_app.get_cosmos_service") as mock_cosmos_fn:
+
+            config = MagicMock()
+            config.doc_intel_endpoint = "https://doc-intel.cognitiveservices.azure.com"
+            config.doc_intel_api_key = "test-key"
+            config.cosmos_endpoint = "https://cosmos.documents.azure.com"
+            mock_config_fn.return_value = config
+
+            blob_service = MagicMock()
+            mock_blob_fn.return_value = blob_service
+
+            cosmos_service = AsyncMock()
+            mock_cosmos_fn.return_value = cosmos_service
+
+            req = create_mock_request(method="GET", body={})
+
+            response = await health_readiness(req)
+
+            assert response.status_code == 200
+            body = json.loads(response.get_body().decode())
+            assert body["status"] == "ready"
+            assert body["dependencies"]["config"]["status"] == "ready"
+            assert body["dependencies"]["storage"]["status"] == "ready"
+            assert body["dependencies"]["cosmos"]["status"] == "ready"
+            assert body["dependencies"]["document_intelligence"]["status"] == "ready"
+
+    @pytest.mark.asyncio
+    async def test_readiness_storage_not_configured(self):
+        """Test readiness probe when storage not configured."""
+        from function_app import health_readiness
+
+        with patch("function_app.get_config") as mock_config_fn, \
+             patch("function_app.get_blob_service") as mock_blob_fn, \
+             patch("function_app.get_cosmos_service") as mock_cosmos_fn:
+
+            config = MagicMock()
+            config.doc_intel_endpoint = "https://doc-intel.cognitiveservices.azure.com"
+            config.doc_intel_api_key = "test-key"
+            config.cosmos_endpoint = "https://cosmos.documents.azure.com"
+            mock_config_fn.return_value = config
+
+            mock_blob_fn.return_value = None  # Not configured
+
+            cosmos_service = AsyncMock()
+            mock_cosmos_fn.return_value = cosmos_service
+
+            req = create_mock_request(method="GET", body={})
+
+            response = await health_readiness(req)
+
+            assert response.status_code == 503
+            body = json.loads(response.get_body().decode())
+            assert body["status"] == "not_ready"
+            assert body["dependencies"]["storage"]["status"] == "not_ready"
+
+    @pytest.mark.asyncio
+    async def test_readiness_cosmos_not_configured(self):
+        """Test readiness probe when Cosmos DB not configured."""
+        from function_app import health_readiness
+
+        with patch("function_app.get_config") as mock_config_fn, \
+             patch("function_app.get_blob_service") as mock_blob_fn, \
+             patch("function_app.get_cosmos_service") as mock_cosmos_fn:
+
+            config = MagicMock()
+            config.doc_intel_endpoint = "https://doc-intel.cognitiveservices.azure.com"
+            config.doc_intel_api_key = "test-key"
+            config.cosmos_endpoint = None  # Not configured
+            mock_config_fn.return_value = config
+
+            blob_service = MagicMock()
+            mock_blob_fn.return_value = blob_service
+
+            cosmos_service = AsyncMock()
+            mock_cosmos_fn.return_value = cosmos_service
+
+            req = create_mock_request(method="GET", body={})
+
+            response = await health_readiness(req)
+
+            assert response.status_code == 503
+            body = json.loads(response.get_body().decode())
+            assert body["status"] == "not_ready"
+            assert body["dependencies"]["cosmos"]["status"] == "not_ready"
+
+    @pytest.mark.asyncio
+    async def test_readiness_doc_intel_not_configured(self):
+        """Test readiness probe when Document Intelligence not configured."""
+        from function_app import health_readiness
+
+        with patch("function_app.get_config") as mock_config_fn, \
+             patch("function_app.get_blob_service") as mock_blob_fn, \
+             patch("function_app.get_cosmos_service") as mock_cosmos_fn:
+
+            config = MagicMock()
+            config.doc_intel_endpoint = None  # Not configured
+            config.doc_intel_api_key = None
+            config.cosmos_endpoint = "https://cosmos.documents.azure.com"
+            mock_config_fn.return_value = config
+
+            blob_service = MagicMock()
+            mock_blob_fn.return_value = blob_service
+
+            cosmos_service = AsyncMock()
+            mock_cosmos_fn.return_value = cosmos_service
+
+            req = create_mock_request(method="GET", body={})
+
+            response = await health_readiness(req)
+
+            assert response.status_code == 503
+            body = json.loads(response.get_body().decode())
+            assert body["status"] == "not_ready"
+            assert body["dependencies"]["document_intelligence"]["status"] == "not_ready"
+
+    @pytest.mark.asyncio
+    async def test_readiness_deep_check_storage_success(self):
+        """Test readiness deep check with storage connectivity."""
+        from function_app import health_readiness
+
+        with patch("function_app.get_config") as mock_config_fn, \
+             patch("function_app.get_blob_service") as mock_blob_fn, \
+             patch("function_app.get_cosmos_service") as mock_cosmos_fn:
+
+            config = MagicMock()
+            config.doc_intel_endpoint = "https://doc-intel.cognitiveservices.azure.com"
+            config.doc_intel_api_key = "test-key"
+            config.cosmos_endpoint = "https://cosmos.documents.azure.com"
+            mock_config_fn.return_value = config
+
+            blob_service = MagicMock()
+            blob_service.list_blobs.return_value = []  # Success
+            mock_blob_fn.return_value = blob_service
+
+            cosmos_service = AsyncMock()
+            cosmos_service.get_document.return_value = None  # Not found is OK
+            mock_cosmos_fn.return_value = cosmos_service
+
+            req = create_mock_request(method="GET", body={}, params={"deep": "true"})
+
+            response = await health_readiness(req)
+
+            assert response.status_code == 200
+            body = json.loads(response.get_body().decode())
+            assert body["deepCheck"] is True
+            assert body["dependencies"]["storage"]["status"] == "ready"
+            assert "Storage accessible" in body["dependencies"]["storage"]["message"]
+
+    @pytest.mark.asyncio
+    async def test_readiness_deep_check_storage_failure(self):
+        """Test readiness deep check with storage connectivity failure."""
+        from function_app import health_readiness
+
+        with patch("function_app.get_config") as mock_config_fn, \
+             patch("function_app.get_blob_service") as mock_blob_fn, \
+             patch("function_app.get_cosmos_service") as mock_cosmos_fn:
+
+            config = MagicMock()
+            config.doc_intel_endpoint = "https://doc-intel.cognitiveservices.azure.com"
+            config.doc_intel_api_key = "test-key"
+            config.cosmos_endpoint = "https://cosmos.documents.azure.com"
+            mock_config_fn.return_value = config
+
+            blob_service = MagicMock()
+            blob_service.list_blobs.side_effect = Exception("Connection failed")
+            mock_blob_fn.return_value = blob_service
+
+            cosmos_service = AsyncMock()
+            cosmos_service.get_document.return_value = None
+            mock_cosmos_fn.return_value = cosmos_service
+
+            req = create_mock_request(method="GET", body={}, params={"deep": "true"})
+
+            response = await health_readiness(req)
+
+            assert response.status_code == 503
+            body = json.loads(response.get_body().decode())
+            assert body["status"] == "not_ready"
+            assert body["dependencies"]["storage"]["status"] == "not_ready"
+
+    @pytest.mark.asyncio
+    async def test_readiness_deep_check_cosmos_not_found(self):
+        """Test readiness deep check with Cosmos returning not found (expected)."""
+        from function_app import health_readiness
+        from services.cosmos_service import CosmosError
+
+        with patch("function_app.get_config") as mock_config_fn, \
+             patch("function_app.get_blob_service") as mock_blob_fn, \
+             patch("function_app.get_cosmos_service") as mock_cosmos_fn:
+
+            config = MagicMock()
+            config.doc_intel_endpoint = "https://doc-intel.cognitiveservices.azure.com"
+            config.doc_intel_api_key = "test-key"
+            config.cosmos_endpoint = "https://cosmos.documents.azure.com"
+            mock_config_fn.return_value = config
+
+            blob_service = MagicMock()
+            blob_service.list_blobs.return_value = []
+            mock_blob_fn.return_value = blob_service
+
+            cosmos_service = AsyncMock()
+            # "Not found" error is actually a success (connectivity works)
+            cosmos_service.get_document.side_effect = CosmosError("get", "404 not found")
+            mock_cosmos_fn.return_value = cosmos_service
+
+            req = create_mock_request(method="GET", body={}, params={"deep": "true"})
+
+            response = await health_readiness(req)
+
+            assert response.status_code == 200
+            body = json.loads(response.get_body().decode())
+            assert body["dependencies"]["cosmos"]["status"] == "ready"
+
+    @pytest.mark.asyncio
+    async def test_readiness_config_error(self):
+        """Test readiness probe when config loading fails."""
+        from function_app import health_readiness
+
+        with patch("function_app.get_config") as mock_config_fn:
+            mock_config_fn.side_effect = Exception("Config error")
+
+            req = create_mock_request(method="GET", body={})
+
+            response = await health_readiness(req)
+
+            assert response.status_code == 503
+            body = json.loads(response.get_body().decode())
+            assert body["status"] == "not_ready"
+            assert body["dependencies"]["config"]["status"] == "not_ready"
+
+
 class TestReprocessDocument:
     """Tests for ReprocessDocument HTTP trigger."""
 

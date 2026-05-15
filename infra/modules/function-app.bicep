@@ -49,6 +49,23 @@ param enableDiagnostics bool = true
 ])
 param appServicePlanSku string = 'Y1'
 
+// =============================================================================
+// SECURITY HARDENING PARAMETERS
+// =============================================================================
+
+@description('Enable network hardening (restrict public access). Requires VNet integration subnet.')
+param enableNetworkHardening bool = false
+
+@description('Subnet resource ID for VNet integration. Required when enableNetworkHardening is true.')
+param vnetIntegrationSubnetId string = ''
+
+@description('Restrict public network access. Set to "Disabled" for Private Endpoint only access.')
+@allowed(['Enabled', 'Disabled'])
+param publicNetworkAccess string = 'Enabled'
+
+@description('Allowed IP addresses for SCM/deployment site (CIDR notation). Only applies when publicNetworkAccess is Enabled.')
+param scmAllowedIpRanges array = []
+
 // Determine SKU tier based on SKU name
 var skuTiers = {
   Y1: 'Dynamic'
@@ -100,6 +117,14 @@ resource appServicePlan 'Microsoft.Web/serverfarms@2024-04-01' = {
   }
 }
 
+// Build IP security restrictions for SCM site
+var scmIpSecurityRestrictions = [for (ip, index) in scmAllowedIpRanges: {
+  name: 'AllowIP${index}'
+  ipAddress: ip
+  action: 'Allow'
+  priority: 100 + index
+}]
+
 // Function App
 resource functionApp 'Microsoft.Web/sites@2024-04-01' = {
   name: functionAppName
@@ -112,11 +137,16 @@ resource functionApp 'Microsoft.Web/sites@2024-04-01' = {
   properties: {
     serverFarmId: appServicePlan.id
     httpsOnly: true
-    publicNetworkAccess: 'Enabled'
+    publicNetworkAccess: publicNetworkAccess
+    // VNet integration for private connectivity (requires non-Consumption plan)
+    virtualNetworkSubnetId: enableNetworkHardening && vnetIntegrationSubnetId != '' ? vnetIntegrationSubnetId : null
     siteConfig: {
       linuxFxVersion: 'PYTHON|3.10'
       pythonVersion: '3.10'
       ftpsState: 'Disabled'
+      // SCM site IP restrictions (for deployment security)
+      scmIpSecurityRestrictions: enableNetworkHardening ? scmIpSecurityRestrictions : []
+      scmIpSecurityRestrictionsUseMain: false
       minTlsVersion: '1.2'
       http20Enabled: true
       functionAppScaleLimit: 200
@@ -253,3 +283,6 @@ output principalId string = functionApp.identity.principalId
 
 @description('Application Insights instrumentation key')
 output appInsightsKey string = appInsights.properties.InstrumentationKey
+
+@description('Application Insights resource ID')
+output appInsightsId string = appInsights.id

@@ -1,0 +1,501 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.39.26.7824",
+      "templateHash": "12432790600399028197"
+    }
+  },
+  "parameters": {
+    "prefix": {
+      "type": "string",
+      "metadata": {
+        "description": "Prefix for resource naming"
+      }
+    },
+    "location": {
+      "type": "string",
+      "defaultValue": "[resourceGroup().location]",
+      "metadata": {
+        "description": "Azure region for deployment"
+      }
+    },
+    "environment": {
+      "type": "string",
+      "metadata": {
+        "description": "Environment name (dev, prod)"
+      }
+    },
+    "tags": {
+      "type": "object",
+      "defaultValue": {},
+      "metadata": {
+        "description": "Tags to apply to resources"
+      }
+    },
+    "logAnalyticsWorkspaceId": {
+      "type": "string",
+      "metadata": {
+        "description": "Log Analytics workspace resource ID"
+      }
+    }
+  },
+  "variables": {
+    "workbookName": "[format('{0}-workbook-{1}', parameters('prefix'), parameters('environment'))]",
+    "workbookId": "[guid(subscription().subscriptionId, resourceGroup().id, variables('workbookName'))]",
+    "workbookContent": {
+      "version": "Notebook/1.0",
+      "items": [
+        {
+          "type": 1,
+          "content": {
+            "json": "# Document Processing Pipeline Dashboard\n\nReal-time monitoring for the Document Intelligence PDF processing pipeline."
+          },
+          "name": "header"
+        },
+        {
+          "type": 9,
+          "content": {
+            "version": "KqlParameterItem/1.0",
+            "parameters": [
+              {
+                "id": "timeRange",
+                "version": "KqlParameterItem/1.0",
+                "name": "TimeRange",
+                "type": 4,
+                "isRequired": true,
+                "value": {
+                  "durationMs": 86400000
+                },
+                "typeSettings": {
+                  "selectableValues": [
+                    {
+                      "durationMs": 3600000
+                    },
+                    {
+                      "durationMs": 14400000
+                    },
+                    {
+                      "durationMs": 43200000
+                    },
+                    {
+                      "durationMs": 86400000
+                    },
+                    {
+                      "durationMs": 172800000
+                    },
+                    {
+                      "durationMs": 604800000
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          "name": "parameters"
+        },
+        {
+          "type": 3,
+          "content": {
+            "version": "KqlItem/1.0",
+            "query": "          FunctionAppLogs\r\n          | where TimeGenerated >= ago(24h)\r\n          | where Message contains \"processed\" or Message contains \"completed\"\r\n          | summarize DocumentsProcessed = count() by bin(TimeGenerated, 1h)\r\n          | render timechart\r\n        ",
+            "size": 0,
+            "title": "Documents Processed Over Time",
+            "timeContext": {
+              "durationMs": 86400000
+            },
+            "queryType": 0,
+            "resourceType": "microsoft.operationalinsights/workspaces",
+            "crossComponentResources": [
+              "[parameters('logAnalyticsWorkspaceId')]"
+            ],
+            "visualization": "timechart"
+          },
+          "name": "processingThroughput"
+        },
+        {
+          "type": 3,
+          "content": {
+            "version": "KqlItem/1.0",
+            "query": "          FunctionAppLogs\r\n          | where TimeGenerated >= ago(24h)\r\n          | where Level == \"Error\" or Level == \"Warning\"\r\n          | summarize Errors = countif(Level == \"Error\"), Warnings = countif(Level == \"Warning\") by bin(TimeGenerated, 1h)\r\n          | render timechart\r\n        ",
+            "size": 0,
+            "title": "Error and Warning Rates",
+            "timeContext": {
+              "durationMs": 86400000
+            },
+            "queryType": 0,
+            "resourceType": "microsoft.operationalinsights/workspaces",
+            "crossComponentResources": [
+              "[parameters('logAnalyticsWorkspaceId')]"
+            ],
+            "visualization": "timechart",
+            "chartSettings": {
+              "seriesLabelSettings": [
+                {
+                  "seriesName": "Errors",
+                  "color": "redBright"
+                },
+                {
+                  "seriesName": "Warnings",
+                  "color": "yellow"
+                }
+              ]
+            }
+          },
+          "name": "errorRates"
+        },
+        {
+          "type": 3,
+          "content": {
+            "version": "KqlItem/1.0",
+            "query": "          AppTraces\r\n          | where TimeGenerated >= ago(24h)\r\n          | where Message contains \"Document Intelligence\" or Message contains \"analyze_document\"\r\n          | extend Duration = extract(\"duration[=:]\\\\s*(\\\\d+)\", 1, Message)\r\n          | where isnotempty(Duration)\r\n          | summarize AvgLatencyMs = avg(todouble(Duration)), P95LatencyMs = percentile(todouble(Duration), 95) by bin(TimeGenerated, 1h)\r\n          | render timechart\r\n        ",
+            "size": 0,
+            "title": "Document Intelligence Latency (ms)",
+            "timeContext": {
+              "durationMs": 86400000
+            },
+            "queryType": 0,
+            "resourceType": "microsoft.operationalinsights/workspaces",
+            "crossComponentResources": [
+              "[parameters('logAnalyticsWorkspaceId')]"
+            ],
+            "visualization": "timechart"
+          },
+          "name": "docIntelLatency"
+        },
+        {
+          "type": 3,
+          "content": {
+            "version": "KqlItem/1.0",
+            "query": "          AzureDiagnostics\r\n          | where TimeGenerated >= ago(24h)\r\n          | where ResourceProvider == \"MICROSOFT.DOCUMENTDB\"\r\n          | where Category == \"DataPlaneRequests\"\r\n          | summarize TotalRUs = sum(todouble(requestCharge_s)) by bin(TimeGenerated, 1h)\r\n          | render timechart\r\n        ",
+            "size": 0,
+            "title": "Cosmos DB RU Consumption",
+            "timeContext": {
+              "durationMs": 86400000
+            },
+            "queryType": 0,
+            "resourceType": "microsoft.operationalinsights/workspaces",
+            "crossComponentResources": [
+              "[parameters('logAnalyticsWorkspaceId')]"
+            ],
+            "visualization": "timechart"
+          },
+          "name": "cosmosRuConsumption"
+        },
+        {
+          "type": 3,
+          "content": {
+            "version": "KqlItem/1.0",
+            "query": "          FunctionAppLogs\r\n          | where TimeGenerated >= ago(24h)\r\n          | summarize\r\n              TotalExecutions = count(),\r\n              SuccessfulExecutions = countif(Level != \"Error\"),\r\n              FailedExecutions = countif(Level == \"Error\")\r\n          | extend SuccessRate = round(100.0 * SuccessfulExecutions / TotalExecutions, 2)\r\n        ",
+            "size": 4,
+            "title": "Function Execution Summary (24h)",
+            "timeContext": {
+              "durationMs": 86400000
+            },
+            "queryType": 0,
+            "resourceType": "microsoft.operationalinsights/workspaces",
+            "crossComponentResources": [
+              "[parameters('logAnalyticsWorkspaceId')]"
+            ],
+            "visualization": "tiles",
+            "tileSettings": {
+              "showBorder": false,
+              "titleContent": {
+                "columnMatch": "Column1",
+                "formatter": 1
+              },
+              "leftContent": {
+                "columnMatch": "TotalExecutions",
+                "formatter": 12,
+                "numberFormat": {
+                  "unit": 17,
+                  "options": {
+                    "style": "decimal"
+                  }
+                }
+              }
+            }
+          },
+          "name": "executionSummary"
+        },
+        {
+          "type": 3,
+          "content": {
+            "version": "KqlItem/1.0",
+            "query": "          FunctionAppLogs\r\n          | where TimeGenerated >= ago(24h)\r\n          | where Message contains \"sourceFile\" or Message contains \"blob\"\r\n          | extend Status = case(\r\n              Level == \"Error\", \"Failed\",\r\n              Message contains \"completed\", \"Completed\",\r\n              Message contains \"processing\", \"Processing\",\r\n              \"Unknown\"\r\n          )\r\n          | summarize Count = count() by Status\r\n          | render piechart\r\n        ",
+            "size": 3,
+            "title": "Processing Status Distribution",
+            "timeContext": {
+              "durationMs": 86400000
+            },
+            "queryType": 0,
+            "resourceType": "microsoft.operationalinsights/workspaces",
+            "crossComponentResources": [
+              "[parameters('logAnalyticsWorkspaceId')]"
+            ],
+            "visualization": "piechart"
+          },
+          "name": "processingStatus"
+        },
+        {
+          "type": 3,
+          "content": {
+            "version": "KqlItem/1.0",
+            "query": "          FunctionAppLogs\r\n          | where TimeGenerated >= ago(24h)\r\n          | where Level == \"Error\"\r\n          | project TimeGenerated, FunctionName, Message\r\n          | top 20 by TimeGenerated desc\r\n        ",
+            "size": 0,
+            "title": "Recent Errors",
+            "timeContext": {
+              "durationMs": 86400000
+            },
+            "queryType": 0,
+            "resourceType": "microsoft.operationalinsights/workspaces",
+            "crossComponentResources": [
+              "[parameters('logAnalyticsWorkspaceId')]"
+            ],
+            "visualization": "table",
+            "gridSettings": {
+              "formatters": [
+                {
+                  "columnMatch": "TimeGenerated",
+                  "formatter": 6
+                },
+                {
+                  "columnMatch": "Message",
+                  "formatter": 1
+                }
+              ]
+            }
+          },
+          "name": "recentErrors"
+        },
+        {
+          "type": 3,
+          "content": {
+            "version": "KqlItem/1.0",
+            "query": "          AppTraces\r\n          | where TimeGenerated >= ago(24h)\r\n          | where Message contains \"Cache hit\" or Message contains \"Cache miss\"\r\n          | extend CacheResult = iff(Message contains \"Cache hit\", \"Hit\", \"Miss\")\r\n          | summarize Count = count() by CacheResult\r\n          | render piechart\r\n        ",
+            "size": 3,
+            "title": "Cache Hit Rate",
+            "timeContext": {
+              "durationMs": 86400000
+            },
+            "queryType": 0,
+            "resourceType": "microsoft.operationalinsights/workspaces",
+            "crossComponentResources": [
+              "[parameters('logAnalyticsWorkspaceId')]"
+            ],
+            "visualization": "piechart",
+            "chartSettings": {
+              "seriesLabelSettings": [
+                {
+                  "seriesName": "Hit",
+                  "color": "green"
+                },
+                {
+                  "seriesName": "Miss",
+                  "color": "orange"
+                }
+              ]
+            }
+          },
+          "name": "cacheHitRate"
+        },
+        {
+          "type": 3,
+          "content": {
+            "version": "KqlItem/1.0",
+            "query": "          AppTraces\r\n          | where TimeGenerated >= ago(24h)\r\n          | where Message contains \"dead_letter\" or Message contains \"DLQ\"\r\n          | extend Action = case(\r\n              Message contains \"added to dead letter\", \"Added\",\r\n              Message contains \"retry\", \"Retry Attempted\",\r\n              Message contains \"resolved\", \"Resolved\",\r\n              \"Other\"\r\n          )\r\n          | summarize Count = count() by bin(TimeGenerated, 1h), Action\r\n          | render timechart\r\n        ",
+            "size": 0,
+            "title": "Dead Letter Queue Activity",
+            "timeContext": {
+              "durationMs": 86400000
+            },
+            "queryType": 0,
+            "resourceType": "microsoft.operationalinsights/workspaces",
+            "crossComponentResources": [
+              "[parameters('logAnalyticsWorkspaceId')]"
+            ],
+            "visualization": "timechart",
+            "chartSettings": {
+              "seriesLabelSettings": [
+                {
+                  "seriesName": "Added",
+                  "color": "redBright"
+                },
+                {
+                  "seriesName": "Retry Attempted",
+                  "color": "yellow"
+                },
+                {
+                  "seriesName": "Resolved",
+                  "color": "green"
+                }
+              ]
+            }
+          },
+          "name": "dlqActivity"
+        },
+        {
+          "type": 3,
+          "content": {
+            "version": "KqlItem/1.0",
+            "query": "          AppTraces\r\n          | where TimeGenerated >= ago(24h)\r\n          | where Message contains \"circuit\" or Message contains \"Circuit\"\r\n          | extend State = case(\r\n              Message contains \"OPEN\" or Message contains \"opened\", \"Open\",\r\n              Message contains \"HALF_OPEN\" or Message contains \"half-open\", \"Half-Open\",\r\n              Message contains \"CLOSED\" or Message contains \"closed\", \"Closed\",\r\n              \"Unknown\"\r\n          )\r\n          | summarize StateChanges = count() by bin(TimeGenerated, 15m), State\r\n          | render timechart\r\n        ",
+            "size": 0,
+            "title": "Circuit Breaker State Changes",
+            "timeContext": {
+              "durationMs": 86400000
+            },
+            "queryType": 0,
+            "resourceType": "microsoft.operationalinsights/workspaces",
+            "crossComponentResources": [
+              "[parameters('logAnalyticsWorkspaceId')]"
+            ],
+            "visualization": "timechart",
+            "chartSettings": {
+              "seriesLabelSettings": [
+                {
+                  "seriesName": "Open",
+                  "color": "redBright"
+                },
+                {
+                  "seriesName": "Half-Open",
+                  "color": "yellow"
+                },
+                {
+                  "seriesName": "Closed",
+                  "color": "green"
+                }
+              ]
+            }
+          },
+          "name": "circuitBreakerStates"
+        },
+        {
+          "type": 3,
+          "content": {
+            "version": "KqlItem/1.0",
+            "query": "          AppRequests\r\n          | where TimeGenerated >= ago(24h)\r\n          | summarize\r\n              P50 = percentile(DurationMs, 50),\r\n              P90 = percentile(DurationMs, 90),\r\n              P95 = percentile(DurationMs, 95),\r\n              P99 = percentile(DurationMs, 99)\r\n            by bin(TimeGenerated, 15m)\r\n          | render timechart\r\n        ",
+            "size": 0,
+            "title": "Request Latency Percentiles (ms)",
+            "timeContext": {
+              "durationMs": 86400000
+            },
+            "queryType": 0,
+            "resourceType": "microsoft.operationalinsights/workspaces",
+            "crossComponentResources": [
+              "[parameters('logAnalyticsWorkspaceId')]"
+            ],
+            "visualization": "timechart",
+            "chartSettings": {
+              "seriesLabelSettings": [
+                {
+                  "seriesName": "P50",
+                  "color": "green"
+                },
+                {
+                  "seriesName": "P90",
+                  "color": "blue"
+                },
+                {
+                  "seriesName": "P95",
+                  "color": "yellow"
+                },
+                {
+                  "seriesName": "P99",
+                  "color": "redBright"
+                }
+              ]
+            }
+          },
+          "name": "latencyPercentiles"
+        },
+        {
+          "type": 3,
+          "content": {
+            "version": "KqlItem/1.0",
+            "query": "          AppTraces\r\n          | where TimeGenerated >= ago(24h)\r\n          | where Message contains \"dead_letter\" or Message contains \"DLQ\"\r\n          | where Message contains \"added\"\r\n          | summarize\r\n              TotalAdded = count(),\r\n              Last1Hour = countif(TimeGenerated >= ago(1h)),\r\n              Last4Hours = countif(TimeGenerated >= ago(4h))\r\n        ",
+            "size": 4,
+            "title": "Dead Letter Queue Summary (24h)",
+            "timeContext": {
+              "durationMs": 86400000
+            },
+            "queryType": 0,
+            "resourceType": "microsoft.operationalinsights/workspaces",
+            "crossComponentResources": [
+              "[parameters('logAnalyticsWorkspaceId')]"
+            ],
+            "visualization": "tiles",
+            "tileSettings": {
+              "showBorder": true
+            }
+          },
+          "name": "dlqSummary"
+        },
+        {
+          "type": 3,
+          "content": {
+            "version": "KqlItem/1.0",
+            "query": "          AppTraces\r\n          | where TimeGenerated >= ago(24h)\r\n          | where SeverityLevel >= 3\r\n          | extend ErrorType = case(\r\n              Message contains \"rate limit\" or Message contains \"429\", \"Rate Limit\",\r\n              Message contains \"timeout\" or Message contains \"timed out\", \"Timeout\",\r\n              Message contains \"authentication\" or Message contains \"401\", \"Auth Error\",\r\n              Message contains \"not found\" or Message contains \"404\", \"Not Found\",\r\n              Message contains \"circuit breaker\", \"Circuit Breaker\",\r\n              Message contains \"cosmos\" or Message contains \"CosmosDB\", \"Cosmos DB\",\r\n              Message contains \"blob\" or Message contains \"storage\", \"Storage\",\r\n              Message contains \"document intelligence\", \"Doc Intelligence\",\r\n              \"Other\"\r\n          )\r\n          | summarize Count = count() by ErrorType\r\n          | order by Count desc\r\n          | render piechart\r\n        ",
+            "size": 3,
+            "title": "Error Types Distribution",
+            "timeContext": {
+              "durationMs": 86400000
+            },
+            "queryType": 0,
+            "resourceType": "microsoft.operationalinsights/workspaces",
+            "crossComponentResources": [
+              "[parameters('logAnalyticsWorkspaceId')]"
+            ],
+            "visualization": "piechart"
+          },
+          "name": "errorTypesBreakdown"
+        }
+      ],
+      "isLocked": false,
+      "fallbackResourceIds": [
+        "[parameters('logAnalyticsWorkspaceId')]"
+      ]
+    }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Insights/workbooks",
+      "apiVersion": "2023-06-01",
+      "name": "[variables('workbookId')]",
+      "location": "[parameters('location')]",
+      "tags": "[union(parameters('tags'), createObject('hidden-title', 'Document Processing Pipeline Dashboard'))]",
+      "kind": "shared",
+      "properties": {
+        "displayName": "[format('Document Processing Pipeline Dashboard - {0}', parameters('environment'))]",
+        "category": "workbook",
+        "version": "1.0",
+        "serializedData": "[string(variables('workbookContent'))]",
+        "sourceId": "[parameters('logAnalyticsWorkspaceId')]"
+      }
+    }
+  ],
+  "outputs": {
+    "name": {
+      "type": "string",
+      "metadata": {
+        "description": "Workbook name"
+      },
+      "value": "[variables('workbookId')]"
+    },
+    "resourceId": {
+      "type": "string",
+      "metadata": {
+        "description": "Workbook resource ID"
+      },
+      "value": "[resourceId('Microsoft.Insights/workbooks', variables('workbookId'))]"
+    },
+    "displayName": {
+      "type": "string",
+      "metadata": {
+        "description": "Workbook display name"
+      },
+      "value": "[reference(resourceId('Microsoft.Insights/workbooks', variables('workbookId')), '2023-06-01').displayName]"
+    }
+  }
+}
