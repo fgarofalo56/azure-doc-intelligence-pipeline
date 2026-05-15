@@ -77,7 +77,10 @@ NUL
 # IDE/Tool specific (local configurations)
 .mcp.json
 .serena/
-.claude/
+.claude/*
+# Exception: durable historical record of the Archon v1 task ledger
+# (de-Archon-v1 migration 2026-05). Keep tracked so the record survives a clone.
+!.claude/migrated-archon-tasks.md
 
 # Logs
 *.log
