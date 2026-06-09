@@ -16,7 +16,7 @@ dependencies = [
     "azure-storage-blob>=12.19.0",
     "azure-storage-queue>=12.9.0",
     "azure-keyvault-secrets>=4.8.0",
-    "aiohttp>=3.10.0",
+    "aiohttp>=3.14.0",
     "pydantic>=2.0.0",
 ]
 
@@ -27,10 +27,10 @@ dev = [
     "pytest-cov>=4.1.0",
     "ruff>=0.1.0",
     "mypy>=1.7.0",
-    "python-dotenv>=1.0.0",
+    "python-dotenv>=1.2.2",
     "pre-commit>=3.6.0",
     "bandit[toml]>=1.7.0",
-    "pypdf>=4.0.0",
+    "pypdf>=6.10.2",
     "httpx>=0.27.0",
 ]
 
@@ -48,10 +48,10 @@ dev = [
     "pytest-cov>=4.1.0",
     "ruff>=0.1.0",
     "mypy>=1.7.0",
-    "python-dotenv>=1.0.0",
+    "python-dotenv>=1.2.2",
     "pre-commit>=3.6.0",
     "bandit[toml]>=1.7.0",
-    "pypdf>=4.0.0",
+    "pypdf>=6.10.2",
     "httpx>=0.27.0",
 ]
 
