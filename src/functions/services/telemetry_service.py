@@ -246,7 +246,7 @@ class TelemetryService:
             return
 
         try:
-            from opencensus.stats import aggregation, measure, view
+            from opencensus.stats import measure
             from opencensus.tags import tag_key, tag_map, tag_value
 
             # Create dynamic measure if needed

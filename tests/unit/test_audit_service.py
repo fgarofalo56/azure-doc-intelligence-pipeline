@@ -359,7 +359,6 @@ class TestAuditService:
     @pytest.mark.asyncio
     async def test_query_by_user(self, audit_service, mock_cosmos):
         """Test querying entries by user."""
-        from services.audit_service import AuditAction, AuditStatus
 
         mock_cosmos.query_documents.return_value = [
             {
@@ -380,7 +379,6 @@ class TestAuditService:
     @pytest.mark.asyncio
     async def test_query_by_user_with_time_range(self, audit_service, mock_cosmos):
         """Test querying by user with time range."""
-        from services.audit_service import AuditAction
 
         start_time = datetime(2024, 1, 1, tzinfo=timezone.utc)
         end_time = datetime(2024, 1, 31, tzinfo=timezone.utc)

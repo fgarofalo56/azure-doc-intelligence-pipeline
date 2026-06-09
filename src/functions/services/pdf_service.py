@@ -316,9 +316,7 @@ class PdfService:
                 page_numbers.append(self._detect_page_number_pattern(text))
 
             # Strategy 1: Detect boundaries from page numbers
-            boundaries = self._detect_boundaries_from_page_numbers(
-                page_numbers, total_pages
-            )
+            boundaries = self._detect_boundaries_from_page_numbers(page_numbers, total_pages)
             if boundaries:
                 logger.info(f"Detected {len(boundaries)} forms via page numbers")
                 return boundaries
@@ -338,9 +336,7 @@ class PdfService:
         except Exception as e:
             logger.warning(f"Form boundary detection failed: {e}, using fixed split")
             reader = PdfReader(io.BytesIO(pdf_content))
-            return self._create_fixed_boundaries(
-                len(reader.pages), self.pages_per_form
-            )
+            return self._create_fixed_boundaries(len(reader.pages), self.pages_per_form)
 
     def _detect_boundaries_from_page_numbers(
         self,
@@ -436,9 +432,7 @@ class PdfService:
         form_start_pages: list[int] = [0]  # First page always starts a form
 
         for page_idx in range(1, len(page_headers)):
-            similarity = self._calculate_text_similarity(
-                first_header, page_headers[page_idx]
-            )
+            similarity = self._calculate_text_similarity(first_header, page_headers[page_idx])
             if similarity >= similarity_threshold:
                 form_start_pages.append(page_idx)
 
@@ -472,9 +466,7 @@ class PdfService:
 
         return boundaries
 
-    def _create_fixed_boundaries(
-        self, total_pages: int, pages_per_form: int
-    ) -> list[FormBoundary]:
+    def _create_fixed_boundaries(self, total_pages: int, pages_per_form: int) -> list[FormBoundary]:
         """Create fixed-size form boundaries.
 
         Args:

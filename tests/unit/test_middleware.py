@@ -1,7 +1,7 @@
 """Unit tests for middleware decorators."""
 
 import json
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import azure.functions as func
 import pytest
@@ -78,7 +78,9 @@ class TestValidateRequest:
         async def handler(req, validated):
             return func.HttpResponse(status_code=200)
 
-        req = create_mock_request(body={"name": "", "value": -1})  # Invalid: empty name, negative value
+        req = create_mock_request(
+            body={"name": "", "value": -1}
+        )  # Invalid: empty name, negative value
         response = await handler(req)
 
         assert response.status_code == 400
@@ -172,9 +174,7 @@ class TestRateLimit:
 
         with patch("src.functions.middleware.get_rate_limiter") as mock_get_limiter:
             mock_limiter = AsyncMock()
-            mock_limiter.check_rate_limit = AsyncMock(
-                return_value=(False, {"Retry-After": "30"})
-            )
+            mock_limiter.check_rate_limit = AsyncMock(return_value=(False, {"Retry-After": "30"}))
             mock_get_limiter.return_value = mock_limiter
 
             @rate_limit(endpoint="test")
@@ -196,9 +196,7 @@ class TestRateLimit:
 
         with patch("src.functions.middleware.get_rate_limiter") as mock_get_limiter:
             mock_limiter = AsyncMock()
-            mock_limiter.check_rate_limit = AsyncMock(
-                return_value=(True, {})
-            )
+            mock_limiter.check_rate_limit = AsyncMock(return_value=(True, {}))
             mock_get_limiter.return_value = mock_limiter
 
             @rate_limit()
@@ -221,9 +219,7 @@ class TestRateLimit:
 
         with patch("src.functions.middleware.get_rate_limiter") as mock_get_limiter:
             mock_limiter = AsyncMock()
-            mock_limiter.check_rate_limit = AsyncMock(
-                return_value=(True, {})
-            )
+            mock_limiter.check_rate_limit = AsyncMock(return_value=(True, {}))
             mock_get_limiter.return_value = mock_limiter
 
             @rate_limit()
@@ -245,6 +241,7 @@ class TestRequireAuth:
         from src.functions.middleware import require_auth
 
         with patch.dict("os.environ", {"API_KEY": "secret-key-123"}):
+
             @require_auth()
             async def handler(req):
                 return func.HttpResponse(
@@ -263,6 +260,7 @@ class TestRequireAuth:
         from src.functions.middleware import require_auth
 
         with patch.dict("os.environ", {"API_KEY": "secret-key-123"}):
+
             @require_auth()
             async def handler(req):
                 return func.HttpResponse(status_code=200)
@@ -280,6 +278,7 @@ class TestRequireAuth:
         from src.functions.middleware import require_auth
 
         with patch.dict("os.environ", {"API_KEY": "secret-key-123"}):
+
             @require_auth()
             async def handler(req):
                 return func.HttpResponse(status_code=200)
@@ -297,6 +296,7 @@ class TestRequireAuth:
         from src.functions.middleware import require_auth
 
         with patch.dict("os.environ", {}, clear=True):
+
             @require_auth()
             async def handler(req):
                 return func.HttpResponse(
@@ -315,6 +315,7 @@ class TestRequireAuth:
         from src.functions.middleware import require_auth
 
         with patch.dict("os.environ", {"CUSTOM_KEY": "my-secret"}):
+
             @require_auth(api_key_header="X-Custom-Auth", api_key_env="CUSTOM_KEY")
             async def handler(req):
                 return func.HttpResponse(status_code=200)

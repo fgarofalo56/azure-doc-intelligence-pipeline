@@ -182,26 +182,18 @@ class Config:
             errors.extend(self._validate_url("webhook_url", self.webhook_url))
 
         # Validate numeric ranges
+        errors.extend(self._validate_range("function_timeout", self.function_timeout, 1, 600))
         errors.extend(
-            self._validate_range("function_timeout", self.function_timeout, 1, 600)
-        )
-        errors.extend(
-            self._validate_range(
-                "max_concurrent_requests", self.max_concurrent_requests, 1, 100
-            )
+            self._validate_range("max_concurrent_requests", self.max_concurrent_requests, 1, 100)
         )
         errors.extend(
             self._validate_range("sas_token_expiry_hours", self.sas_token_expiry_hours, 1, 168)
         )
-        errors.extend(
-            self._validate_range("max_retry_attempts", self.max_retry_attempts, 0, 10)
-        )
+        errors.extend(self._validate_range("max_retry_attempts", self.max_retry_attempts, 0, 10))
         errors.extend(
             self._validate_range("dlq_retry_batch_size", self.dlq_retry_batch_size, 1, 100)
         )
-        errors.extend(
-            self._validate_range("pages_per_form", self.pages_per_form, 1, 50)
-        )
+        errors.extend(self._validate_range("pages_per_form", self.pages_per_form, 1, 50))
         errors.extend(
             self._validate_range(
                 "concurrent_doc_intel_calls", self.concurrent_doc_intel_calls, 1, 15
@@ -213,12 +205,8 @@ class Config:
         errors.extend(
             self._validate_range("retry_initial_delay", self.retry_initial_delay, 0.1, 60.0)
         )
-        errors.extend(
-            self._validate_range("batch_max_blobs", self.batch_max_blobs, 1, 1000)
-        )
-        errors.extend(
-            self._validate_range("shutdown_timeout", self.shutdown_timeout, 5, 300)
-        )
+        errors.extend(self._validate_range("batch_max_blobs", self.batch_max_blobs, 1, 1000))
+        errors.extend(self._validate_range("shutdown_timeout", self.shutdown_timeout, 5, 300))
 
         # Validate log level
         errors.extend(self._validate_log_level(self.log_level))
@@ -232,12 +220,8 @@ class Config:
         )
 
         # Validate database/container names
-        errors.extend(
-            self._validate_cosmos_name("cosmos_database", self.cosmos_database)
-        )
-        errors.extend(
-            self._validate_cosmos_name("cosmos_container", self.cosmos_container)
-        )
+        errors.extend(self._validate_cosmos_name("cosmos_database", self.cosmos_database))
+        errors.extend(self._validate_cosmos_name("cosmos_container", self.cosmos_container))
 
         return errors
 
@@ -251,9 +235,7 @@ class Config:
         try:
             parsed = urlparse(url)
             if not parsed.scheme:
-                errors.append(
-                    ValidationError(field, "URL must include scheme (http/https)", url)
-                )
+                errors.append(ValidationError(field, "URL must include scheme (http/https)", url))
             elif parsed.scheme not in ("http", "https"):
                 errors.append(
                     ValidationError(
@@ -371,9 +353,7 @@ class Config:
 
         # Cosmos DB names: 1-255 chars, no /, \\, #, ?
         if len(name) > 255:
-            return [
-                ValidationError(field, "Name must be 255 characters or less", name)
-            ]
+            return [ValidationError(field, "Name must be 255 characters or less", name)]
 
         invalid_chars = re.findall(r"[/\\#?]", name)
         if invalid_chars:

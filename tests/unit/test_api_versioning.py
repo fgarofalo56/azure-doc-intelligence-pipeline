@@ -1,10 +1,8 @@
 """Unit tests for api_versioning module."""
 
 import json
-from unittest.mock import MagicMock
 
 import azure.functions as func
-import pytest
 
 from services.api_versioning import (
     CURRENT_VERSION,
@@ -106,9 +104,14 @@ class TestGetDeprecationHeaders:
     def test_headers_for_deprecated_version(self):
         """Test headers include deprecation info."""
         # Temporarily deprecate v1 for testing
-        original_deprecated = dict(__import__("services.api_versioning", fromlist=["DEPRECATED_VERSIONS"]).DEPRECATED_VERSIONS)
+        original_deprecated = dict(
+            __import__(
+                "services.api_versioning", fromlist=["DEPRECATED_VERSIONS"]
+            ).DEPRECATED_VERSIONS
+        )
 
         import services.api_versioning as mod
+
         mod.DEPRECATED_VERSIONS["v0"] = "2025-06-01"
 
         try:
@@ -254,15 +257,6 @@ class TestDeprecateVersion:
 
         # Save original state
         original_deprecated = dict(mod.DEPRECATED_VERSIONS)
-        original_registry = {k: VersionInfo(
-            version=v.version,
-            is_current=v.is_current,
-            is_deprecated=v.is_deprecated,
-            sunset_date=v.sunset_date,
-            successor=v.successor,
-            release_date=v.release_date,
-            changelog=list(v.changelog),
-        ) for k, v in mod.VERSION_REGISTRY.items()}
 
         try:
             # Add a test version to registry

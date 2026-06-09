@@ -3,8 +3,6 @@
 import sys
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 
 class TestGetDocumentService:
     """Tests for get_document_service singleton."""
@@ -26,9 +24,7 @@ class TestGetDocumentService:
         mock_config_module.get_config = MagicMock(return_value=mock_config)
 
         with patch.dict(sys.modules, {"config": mock_config_module}):
-            with patch(
-                "src.functions.services.DocumentService.__init__", return_value=None
-            ):
+            with patch("src.functions.services.DocumentService.__init__", return_value=None):
                 service1 = get_document_service()
                 service2 = get_document_service()
 
@@ -111,10 +107,9 @@ class TestGetPdfService:
 
     def test_get_pdf_service_creates_singleton(self):
         """Test pdf service singleton creation."""
-        from src.functions.services import get_pdf_service
-
         # Reset singleton
         import src.functions.services as services_module
+        from src.functions.services import get_pdf_service
 
         services_module._pdf_service = None
 
@@ -126,10 +121,9 @@ class TestGetPdfService:
 
     def test_get_pdf_service_respects_pages_per_form(self):
         """Test pdf service uses provided pages_per_form."""
-        from src.functions.services import get_pdf_service
-
         # Reset singleton
         import src.functions.services as services_module
+        from src.functions.services import get_pdf_service
 
         services_module._pdf_service = None
 

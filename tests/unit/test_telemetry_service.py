@@ -1,7 +1,6 @@
 """Unit tests for the telemetry service."""
 
 import logging
-
 from unittest.mock import MagicMock, patch
 
 

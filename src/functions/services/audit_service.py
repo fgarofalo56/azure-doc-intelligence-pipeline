@@ -133,9 +133,9 @@ SENSITIVE_PATTERNS = {
     "token",
     "authorization",
     "credential",
-    "apikey",        # Matches apiKey, api_key, etc.
+    "apikey",  # Matches apiKey, api_key, etc.
     "api_key",
-    "privatekey",    # Matches privateKey, private_key
+    "privatekey",  # Matches privateKey, private_key
     "private_key",
     "connectionstring",  # Matches connectionString, connection_string
     "connection_string",
@@ -157,14 +157,16 @@ def redact_sensitive_data(data: dict[str, Any]) -> dict[str, Any]:
     redacted = {}
     for key, value in data.items():
         key_lower = key.lower().replace("_", "")  # Normalize: "api_key" -> "apikey"
-        if any(pattern in key_lower or pattern.replace("_", "") in key_lower for pattern in SENSITIVE_PATTERNS):
+        if any(
+            pattern in key_lower or pattern.replace("_", "") in key_lower
+            for pattern in SENSITIVE_PATTERNS
+        ):
             redacted[key] = "[REDACTED]"
         elif isinstance(value, dict):
             redacted[key] = redact_sensitive_data(value)
         elif isinstance(value, list):
             redacted[key] = [
-                redact_sensitive_data(item) if isinstance(item, dict) else item
-                for item in value
+                redact_sensitive_data(item) if isinstance(item, dict) else item for item in value
             ]
         else:
             redacted[key] = value
@@ -294,9 +296,7 @@ class AuditService:
         Returns:
             AuditEntry: The created audit entry
         """
-        return await self.log(
-            action, AuditStatus.FAILURE, error_message=error_message, **kwargs
-        )
+        return await self.log(action, AuditStatus.FAILURE, error_message=error_message, **kwargs)
 
     async def query_by_user(
         self,

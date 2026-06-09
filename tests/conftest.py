@@ -54,9 +54,7 @@ def pytest_configure(config):
     config.addinivalue_line(
         "markers", "emulator: marks tests that run against local emulators (Azurite, Cosmos DB)"
     )
-    config.addinivalue_line(
-        "markers", "slow: marks tests as slow running"
-    )
+    config.addinivalue_line("markers", "slow: marks tests as slow running")
 
     try:
         from dotenv import load_dotenv

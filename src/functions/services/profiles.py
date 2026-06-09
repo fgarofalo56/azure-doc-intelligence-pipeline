@@ -77,7 +77,9 @@ class ProcessingProfile:
     tags: list[str] = field(default_factory=list)
     auto_detect_forms: bool = False  # Use smart form boundary detection
 
-    def validate_result(self, fields: dict[str, Any], confidence: dict[str, float]) -> dict[str, Any]:
+    def validate_result(
+        self, fields: dict[str, Any], confidence: dict[str, float]
+    ) -> dict[str, Any]:
         """Validate extraction results against profile rules.
 
         Args:

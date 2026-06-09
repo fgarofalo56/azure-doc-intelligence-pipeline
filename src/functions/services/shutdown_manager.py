@@ -8,10 +8,11 @@ import asyncio
 import logging
 import signal
 import threading
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Callable
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -34,9 +35,7 @@ class ProcessingCheckpoint:
     total_forms: int
     forms_completed: list[int] = field(default_factory=list)
     forms_in_progress: int | None = None
-    last_checkpoint_at: str = field(
-        default_factory=lambda: datetime.now(timezone.utc).isoformat()
-    )
+    last_checkpoint_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     original_page_count: int | None = None
     split_pdf_urls: dict[int, str] = field(default_factory=dict)
     metadata: dict[str, Any] = field(default_factory=dict)
@@ -153,9 +152,7 @@ class ShutdownManager:
             if self._state == ShutdownState.RUNNING:
                 self._state = ShutdownState.SHUTDOWN_REQUESTED
                 self._shutdown_event.set()
-                logger.info(
-                    f"Shutdown requested. Grace period: {self._graceful_timeout}s"
-                )
+                logger.info(f"Shutdown requested. Grace period: {self._graceful_timeout}s")
 
                 # Run callbacks
                 for callback in self._shutdown_callbacks:
@@ -313,9 +310,7 @@ class ShutdownManager:
             List of checkpoints for incomplete operations.
         """
         with self._lock:
-            return [
-                cp for cp in self._active_operations.values() if not cp.is_complete
-            ]
+            return [cp for cp in self._active_operations.values() if not cp.is_complete]
 
     def reset(self) -> None:
         """Reset shutdown manager state."""

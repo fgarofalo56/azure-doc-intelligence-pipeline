@@ -52,9 +52,7 @@ def test_pdf_content():
 class TestBlobUploadDownload:
     """Tests for blob upload and download operations."""
 
-    def test_upload_and_download_blob(
-        self, blob_service, test_container, test_blob_name
-    ):
+    def test_upload_and_download_blob(self, blob_service, test_container, test_blob_name):
         """Test uploading and downloading a blob."""
         content = b"Test content for integration test"
 
@@ -75,9 +73,7 @@ class TestBlobUploadDownload:
         # Cleanup
         blob_service.delete_blob(test_container, test_blob_name)
 
-    def test_upload_large_blob(
-        self, blob_service, test_container, test_blob_name
-    ):
+    def test_upload_large_blob(self, blob_service, test_container, test_blob_name):
         """Test uploading a larger blob (simulating PDF size)."""
         # 1MB of data
         content = b"x" * (1024 * 1024)
@@ -97,9 +93,7 @@ class TestBlobUploadDownload:
         # Cleanup
         blob_service.delete_blob(test_container, test_blob_name)
 
-    def test_upload_overwrite(
-        self, blob_service, test_container, test_blob_name
-    ):
+    def test_upload_overwrite(self, blob_service, test_container, test_blob_name):
         """Test overwriting an existing blob."""
         content1 = b"Original content"
         content2 = b"Updated content"
@@ -130,9 +124,7 @@ class TestBlobUploadDownload:
 class TestSASGeneration:
     """Tests for SAS URL generation."""
 
-    def test_generate_sas_url(
-        self, blob_service, test_container, test_blob_name
-    ):
+    def test_generate_sas_url(self, blob_service, test_container, test_blob_name):
         """Test SAS URL generation for an existing blob."""
         content = b"Test content for SAS generation"
 
@@ -154,9 +146,7 @@ class TestSASGeneration:
         # Cleanup
         blob_service.delete_blob(test_container, test_blob_name)
 
-    def test_sas_url_allows_read_access(
-        self, blob_service, test_container, test_blob_name
-    ):
+    def test_sas_url_allows_read_access(self, blob_service, test_container, test_blob_name):
         """Test that generated SAS URL allows read access."""
         import httpx
 
@@ -180,9 +170,7 @@ class TestSASGeneration:
         # Cleanup
         blob_service.delete_blob(test_container, test_blob_name)
 
-    def test_generate_sas_url_with_special_characters(
-        self, blob_service, test_container
-    ):
+    def test_generate_sas_url_with_special_characters(self, blob_service, test_container):
         """Test SAS URL generation for blob with special characters in name."""
         blob_name = f"test folder/test file {uuid4().hex[:8]}.txt"
         content = b"Content with special chars in path"
@@ -241,9 +229,7 @@ class TestBlobListing:
 class TestBlobExistence:
     """Tests for blob existence checks."""
 
-    def test_blob_exists_true(
-        self, blob_service, test_container, test_blob_name
-    ):
+    def test_blob_exists_true(self, blob_service, test_container, test_blob_name):
         """Test blob_exists returns True for existing blob."""
         blob_service.upload_blob(
             container_name=test_container,
@@ -264,9 +250,7 @@ class TestBlobExistence:
 class TestBlobDeletion:
     """Tests for blob deletion operations."""
 
-    def test_delete_blob(
-        self, blob_service, test_container, test_blob_name
-    ):
+    def test_delete_blob(self, blob_service, test_container, test_blob_name):
         """Test deleting a blob."""
         blob_service.upload_blob(
             container_name=test_container,
@@ -287,9 +271,7 @@ class TestBlobDeletion:
 class TestBlobMove:
     """Tests for blob move operations."""
 
-    def test_move_blob_same_container(
-        self, blob_service, test_container, test_blob_name
-    ):
+    def test_move_blob_same_container(self, blob_service, test_container, test_blob_name):
         """Test moving blob within same container."""
         dest_name = f"moved-{test_blob_name}"
         content = b"Test content to move"
@@ -325,9 +307,7 @@ class TestBlobMove:
 class TestURLParsing:
     """Tests for blob URL parsing."""
 
-    def test_parse_blob_url(
-        self, blob_service, test_container, test_blob_name
-    ):
+    def test_parse_blob_url(self, blob_service, test_container, test_blob_name):
         """Test parsing blob URL into container and blob name."""
         # Upload to get a real URL
         blob_url = blob_service.upload_blob(
@@ -344,9 +324,7 @@ class TestURLParsing:
         # Cleanup
         blob_service.delete_blob(test_container, test_blob_name)
 
-    def test_parse_blob_url_with_sas(
-        self, blob_service, test_container, test_blob_name
-    ):
+    def test_parse_blob_url_with_sas(self, blob_service, test_container, test_blob_name):
         """Test parsing blob URL that includes SAS token."""
         blob_url = blob_service.upload_blob(
             container_name=test_container,
@@ -364,9 +342,7 @@ class TestURLParsing:
         # Cleanup
         blob_service.delete_blob(test_container, test_blob_name)
 
-    def test_parse_blob_url_with_encoded_spaces(
-        self, blob_service, test_container
-    ):
+    def test_parse_blob_url_with_encoded_spaces(self, blob_service, test_container):
         """Test parsing URL with URL-encoded spaces."""
         original_name = f"test folder/test file {uuid4().hex[:8]}.txt"
 

@@ -430,7 +430,6 @@ class TestConcurrentCalls:
 
         # First call should be allowed
         # Second concurrent call should be rejected
-        results = []
 
         async def slow_call():
             async with breaker:

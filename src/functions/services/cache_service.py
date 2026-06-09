@@ -341,7 +341,9 @@ class CacheService:
         cache_result = await self.get(content_hash, model_id, pages_per_form)
 
         if cache_result.hit and cache_result.data:
-            logger.info(f"Using cached result for {source_file} (age: {cache_result.age_hours:.1f}h)")
+            logger.info(
+                f"Using cached result for {source_file} (age: {cache_result.age_hours:.1f}h)"
+            )
             return cache_result.data, True
 
         # Process document

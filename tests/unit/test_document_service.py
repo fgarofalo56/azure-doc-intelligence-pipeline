@@ -372,9 +372,7 @@ class TestValidateModel:
         # Create a 404 error for figure not found (expected behavior)
         mock_response = MagicMock()
         mock_response.status_code = 404
-        figure_not_found = HttpResponseError(
-            response=mock_response, message="Figure not found"
-        )
+        figure_not_found = HttpResponseError(response=mock_response, message="Figure not found")
         figure_not_found.status_code = 404  # Set directly on exception
 
         mock_client = AsyncMock()
@@ -422,9 +420,7 @@ class TestValidateModel:
 
         mock_response = MagicMock()
         mock_response.status_code = 500
-        server_error = HttpResponseError(
-            response=mock_response, message="Internal server error"
-        )
+        server_error = HttpResponseError(response=mock_response, message="Internal server error")
         server_error.status_code = 500  # Set directly on exception
 
         mock_client = AsyncMock()
@@ -444,9 +440,7 @@ class TestValidateModel:
     async def test_validate_model_unexpected_error(self, document_service):
         """Test model validation with unexpected exception returns True."""
         mock_client = AsyncMock()
-        mock_client.get_analyze_result_figure = AsyncMock(
-            side_effect=Exception("Network error")
-        )
+        mock_client.get_analyze_result_figure = AsyncMock(side_effect=Exception("Network error"))
 
         with patch(
             "services.document_service.DocumentIntelligenceClient",
@@ -489,9 +483,7 @@ class TestAnalyzeDocumentEdgeCases:
     async def test_analyze_document_without_blob_name(self, document_service):
         """Test error reporting uses blob_url when blob_name not provided."""
         mock_client = AsyncMock()
-        mock_client.begin_analyze_document = AsyncMock(
-            side_effect=Exception("Test error")
-        )
+        mock_client.begin_analyze_document = AsyncMock(side_effect=Exception("Test error"))
 
         with patch(
             "services.document_service.DocumentIntelligenceClient",

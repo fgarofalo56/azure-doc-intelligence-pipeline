@@ -351,9 +351,7 @@ class TestBlobService:
 
     def test_generate_sas_url(self, blob_service):
         """Test SAS URL generation."""
-        with patch(
-            "src.functions.services.blob_service.generate_blob_sas"
-        ) as mock_gen_sas:
+        with patch("src.functions.services.blob_service.generate_blob_sas") as mock_gen_sas:
             mock_gen_sas.return_value = "sv=2021&sig=xxx"
 
             url = "https://teststorage.blob.core.windows.net/pdfs/test.pdf"
@@ -378,9 +376,7 @@ class TestBlobService:
         """Test SAS URL generation handles generic exceptions."""
         from src.functions.services.blob_service import BlobServiceError
 
-        with patch(
-            "src.functions.services.blob_service.generate_blob_sas"
-        ) as mock_gen_sas:
+        with patch("src.functions.services.blob_service.generate_blob_sas") as mock_gen_sas:
             mock_gen_sas.side_effect = RuntimeError("Unexpected error")
 
             url = "https://teststorage.blob.core.windows.net/pdfs/test.pdf"
@@ -421,14 +417,14 @@ class TestBlobService:
         with patch(
             "src.functions.services.blob_service.BlobServiceClient.from_connection_string"
         ) as mock_from_conn:
-            mock_from_conn.return_value.get_container_client.side_effect = Exception("Connection error")
+            mock_from_conn.return_value.get_container_client.side_effect = Exception(
+                "Connection error"
+            )
 
             service = BlobService(connection_string)
 
             with pytest.raises(BlobServiceError) as exc:
-                service.download_blob(
-                    "https://teststorage.blob.core.windows.net/pdfs/test.pdf"
-                )
+                service.download_blob("https://teststorage.blob.core.windows.net/pdfs/test.pdf")
 
             assert "download failed" in str(exc.value).lower()
 
@@ -535,9 +531,7 @@ class TestBlobService:
 
             assert len(blobs) == 2
             assert "incoming/doc1.pdf" in blobs
-            mock_container_client.list_blobs.assert_called_once_with(
-                name_starts_with="incoming/"
-            )
+            mock_container_client.list_blobs.assert_called_once_with(name_starts_with="incoming/")
 
     def test_list_blobs_error(self, connection_string):
         """Test error when list fails."""
