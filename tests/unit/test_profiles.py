@@ -3,8 +3,6 @@
 import json
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from services.profiles import (
     BUILT_IN_PROFILES,
     FieldValidation,
@@ -515,11 +513,7 @@ class TestGetProfile:
 
     @patch.dict(
         "os.environ",
-        {
-            "CUSTOM_PROFILES_JSON": json.dumps(
-                {"custom-form": {"model_id": "custom-model"}}
-            )
-        },
+        {"CUSTOM_PROFILES_JSON": json.dumps({"custom-form": {"model_id": "custom-model"}})},
     )
     def test_get_custom_profile(self):
         """Test getting a custom profile."""

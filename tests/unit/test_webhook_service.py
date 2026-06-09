@@ -4,7 +4,6 @@ import hashlib
 import hmac
 import json
 import logging
-from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
@@ -157,8 +156,12 @@ class TestHmacSignature:
         signature = compute_hmac_signature(payload, secret)
 
         # Manual computation with sorted keys
-        expected_payload = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
-        expected_sig = hmac.new(secret.encode("utf-8"), expected_payload, hashlib.sha256).hexdigest()
+        expected_payload = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode(
+            "utf-8"
+        )
+        expected_sig = hmac.new(
+            secret.encode("utf-8"), expected_payload, hashlib.sha256
+        ).hexdigest()
 
         assert signature == expected_sig
 

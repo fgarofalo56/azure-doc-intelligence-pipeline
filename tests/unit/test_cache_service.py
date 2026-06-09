@@ -1,7 +1,7 @@
 """Unit tests for cache_service module."""
 
 from datetime import datetime, timedelta, timezone
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -252,7 +252,7 @@ class TestCacheServiceSet:
     @pytest.mark.asyncio
     async def test_set_cache_entry_with_metadata(self, cache_service, mock_cosmos):
         """Test storing cache entry with metadata."""
-        cache_key = await cache_service.set(
+        await cache_service.set(
             content_hash="abc123",
             model_id="prebuilt-invoice",
             extraction_result={"status": "completed"},
@@ -321,10 +321,12 @@ class TestCacheServiceInvalidate:
     @pytest.mark.asyncio
     async def test_invalidate_by_model(self, cache_service, mock_cosmos):
         """Test invalidating all entries for a model."""
-        mock_cosmos.query_documents = AsyncMock(return_value=[
-            {"id": "cache_1", "sourceFile": "_cache/cache_1"},
-            {"id": "cache_2", "sourceFile": "_cache/cache_2"},
-        ])
+        mock_cosmos.query_documents = AsyncMock(
+            return_value=[
+                {"id": "cache_1", "sourceFile": "_cache/cache_1"},
+                {"id": "cache_2", "sourceFile": "_cache/cache_2"},
+            ]
+        )
 
         count = await cache_service.invalidate_by_model("prebuilt-invoice")
 
@@ -375,10 +377,12 @@ class TestCacheServiceGetOrProcess:
     async def test_get_or_process_cache_miss(self, cache_service, mock_cosmos):
         """Test get_or_process calls process_func on miss."""
         mock_cosmos.query_documents = AsyncMock(return_value=[])
-        process_func = AsyncMock(return_value={
-            "fields": {"processed": True},
-            "status": "completed",
-        })
+        process_func = AsyncMock(
+            return_value={
+                "fields": {"processed": True},
+                "status": "completed",
+            }
+        )
 
         result, from_cache = await cache_service.get_or_process(
             content=b"PDF content",
@@ -396,11 +400,13 @@ class TestCacheServiceGetOrProcess:
     async def test_get_or_process_failed_not_cached(self, cache_service, mock_cosmos):
         """Test failed results are not cached."""
         mock_cosmos.query_documents = AsyncMock(return_value=[])
-        process_func = AsyncMock(return_value={
-            "fields": {},
-            "status": "failed",
-            "error": "Processing failed",
-        })
+        process_func = AsyncMock(
+            return_value={
+                "fields": {},
+                "status": "failed",
+                "error": "Processing failed",
+            }
+        )
 
         result, from_cache = await cache_service.get_or_process(
             content=b"PDF content",

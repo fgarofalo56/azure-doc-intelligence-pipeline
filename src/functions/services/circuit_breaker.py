@@ -21,10 +21,11 @@ Usage:
 import asyncio
 import logging
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
 from functools import wraps
-from typing import Any, Callable, TypeVar
+from typing import Any, TypeVar
 
 logger = logging.getLogger(__name__)
 
@@ -52,8 +53,7 @@ class CircuitBreakerOpen(CircuitBreakerError):
         self.service_name = service_name
         self.retry_after = retry_after
         super().__init__(
-            f"Circuit breaker is OPEN for '{service_name}'. "
-            f"Retry after {retry_after:.1f} seconds."
+            f"Circuit breaker is OPEN for '{service_name}'. Retry after {retry_after:.1f} seconds."
         )
 
 
@@ -164,16 +164,12 @@ class CircuitBreaker:
             self._stats.consecutive_failures = 0
             self._stats.consecutive_successes = 0
             logger.info(
-                f"Circuit breaker '{self.name}' entering HALF_OPEN state "
-                f"(testing recovery)"
+                f"Circuit breaker '{self.name}' entering HALF_OPEN state (testing recovery)"
             )
         elif new_state == CircuitBreakerState.CLOSED:
             self._opened_at = None
             self._stats.consecutive_failures = 0
-            logger.info(
-                f"Circuit breaker '{self.name}' CLOSED "
-                f"(recovered after {old_state.value})"
-            )
+            logger.info(f"Circuit breaker '{self.name}' CLOSED (recovered after {old_state.value})")
 
     async def _record_success(self) -> None:
         """Record a successful call."""

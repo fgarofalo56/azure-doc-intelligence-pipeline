@@ -85,7 +85,9 @@ def compute_hmac_signature(payload: dict[str, Any], secret: str) -> str:
     return signature.hexdigest()
 
 
-def calculate_retry_delay(attempt: int, base_delay: float = RETRY_DELAY, jitter_max: float = RETRY_JITTER_MAX) -> float:
+def calculate_retry_delay(
+    attempt: int, base_delay: float = RETRY_DELAY, jitter_max: float = RETRY_JITTER_MAX
+) -> float:
     """Calculate retry delay with exponential backoff and jitter.
 
     Args:
@@ -175,6 +177,7 @@ class WebhookService:
             # Lazy import to avoid circular dependency
             if self._cosmos_service is None:
                 from . import get_cosmos_service
+
                 self._cosmos_service = get_cosmos_service()
 
             now = datetime.now(timezone.utc).isoformat()

@@ -4,6 +4,22 @@ Implements pseudo-dependency injection with singleton pattern.
 Services are initialized once and reused for the function lifetime.
 """
 
+from .api_versioning import (
+    CURRENT_VERSION,
+    SUPPORTED_VERSIONS,
+    APIVersion,
+    VersionInfo,
+    add_version_headers,
+    extract_version_from_route,
+    get_api_versions_info,
+    get_deprecation_headers,
+    get_version_info,
+    is_version_deprecated,
+    is_version_supported,
+    version_gate,
+    versioned_error_response,
+    versioned_response,
+)
 from .blob_service import (
     MAX_BLOB_SIZE_BYTES,
     BlobService,
@@ -13,14 +29,31 @@ from .blob_service import (
     sanitize_blob_url,
     validate_blob_name,
 )
-from .cosmos_service import CosmosService
-from .document_service import DocumentService
-from .logging_service import (
-    JsonFormatter,
-    StructuredLogger,
-    configure_json_logging,
-    get_structured_logger,
+from .cache_service import CacheError, CacheResult, CacheService, get_cache_service
+from .circuit_breaker import (
+    CircuitBreaker,
+    CircuitBreakerConfig,
+    CircuitBreakerError,
+    CircuitBreakerOpen,
+    CircuitBreakerState,
+    CircuitBreakerStats,
+    circuit_breaker_decorator,
+    get_all_circuit_breaker_status,
+    get_circuit_breaker,
+    get_circuit_breaker_sync,
+    reset_circuit_breakers,
 )
+from .cosmos_service import CosmosService
+from .dead_letter_queue import (
+    DeadLetterItem,
+    DeadLetterQueueError,
+    DeadLetterQueueService,
+    DeadLetterReason,
+    DeadLetterStatus,
+    get_dead_letter_queue_service,
+    reset_dead_letter_queue_service,
+)
+from .document_service import DocumentService
 from .idempotency import (
     PROCESSING_VERSION,
     IdempotencyResult,
@@ -36,6 +69,12 @@ from .job_service import (
     ProcessingJob,
     get_job_service,
     reset_job_service,
+)
+from .logging_service import (
+    JsonFormatter,
+    StructuredLogger,
+    configure_json_logging,
+    get_structured_logger,
 )
 from .pdf_service import FormBoundary, PdfService, PdfSplitError
 from .profiles import (
@@ -56,45 +95,6 @@ from .webhook_service import (
     compute_hmac_signature,
     get_webhook_service,
     reset_webhook_service,
-)
-from .cache_service import CacheError, CacheResult, CacheService, get_cache_service
-from .api_versioning import (
-    CURRENT_VERSION,
-    SUPPORTED_VERSIONS,
-    APIVersion,
-    VersionInfo,
-    add_version_headers,
-    extract_version_from_route,
-    get_api_versions_info,
-    get_deprecation_headers,
-    get_version_info,
-    is_version_deprecated,
-    is_version_supported,
-    version_gate,
-    versioned_error_response,
-    versioned_response,
-)
-from .circuit_breaker import (
-    CircuitBreaker,
-    CircuitBreakerConfig,
-    CircuitBreakerError,
-    CircuitBreakerOpen,
-    CircuitBreakerState,
-    CircuitBreakerStats,
-    circuit_breaker_decorator,
-    get_all_circuit_breaker_status,
-    get_circuit_breaker,
-    get_circuit_breaker_sync,
-    reset_circuit_breakers,
-)
-from .dead_letter_queue import (
-    DeadLetterItem,
-    DeadLetterQueueError,
-    DeadLetterQueueService,
-    DeadLetterReason,
-    DeadLetterStatus,
-    get_dead_letter_queue_service,
-    reset_dead_letter_queue_service,
 )
 
 # Re-export DLQ types at package level for convenience

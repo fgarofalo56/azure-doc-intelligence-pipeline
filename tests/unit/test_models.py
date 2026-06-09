@@ -176,7 +176,10 @@ class TestBatchProcessRequest:
 
         with pytest.raises(ValidationError):
             BatchProcessRequest(
-                blobs=[{"blobUrl": f"https://s.blob/{i}.pdf", "blobName": f"{i}.pdf"} for i in range(51)]
+                blobs=[
+                    {"blobUrl": f"https://s.blob/{i}.pdf", "blobName": f"{i}.pdf"}
+                    for i in range(51)
+                ]
             )
 
 
@@ -293,7 +296,11 @@ class TestBatchStatusResponse:
 
     def test_batch_status(self):
         """Test batch status response."""
-        from src.functions.models import BatchStatusResponse, DocumentStatusResponse, ProcessingStatus
+        from src.functions.models import (
+            BatchStatusResponse,
+            DocumentStatusResponse,
+            ProcessingStatus,
+        )
 
         doc = DocumentStatusResponse(
             status=ProcessingStatus.COMPLETED,

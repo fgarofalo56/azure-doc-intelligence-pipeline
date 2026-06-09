@@ -99,10 +99,7 @@ class TestDocumentCRUD:
     @pytest.mark.asyncio
     async def test_get_nonexistent_document(self, cosmos_service):
         """Test getting a document that doesn't exist returns None."""
-        result = await cosmos_service.get_document(
-            "nonexistent_id_12345",
-            "nonexistent/file.pdf"
-        )
+        result = await cosmos_service.get_document("nonexistent_id_12345", "nonexistent/file.pdf")
         assert result is None
 
     @pytest.mark.asyncio
@@ -129,8 +126,7 @@ class TestDocumentCRUD:
     async def test_delete_nonexistent_document(self, cosmos_service):
         """Test deleting a document that doesn't exist returns False."""
         deleted = await cosmos_service.delete_document(
-            "nonexistent_delete_12345",
-            "nonexistent/delete.pdf"
+            "nonexistent_delete_12345", "nonexistent/delete.pdf"
         )
         assert deleted is False
 
@@ -365,8 +361,7 @@ class TestRetryOperations:
 
         with pytest.raises(CosmosError) as exc_info:
             await cosmos_service.increment_retry_count(
-                "nonexistent_retry_12345",
-                "nonexistent/retry.pdf"
+                "nonexistent_retry_12345", "nonexistent/retry.pdf"
             )
 
         assert "not found" in str(exc_info.value)
@@ -402,9 +397,7 @@ class TestDeleteOperations:
     @pytest.mark.asyncio
     async def test_delete_by_source_file_empty(self, cosmos_service):
         """Test delete_by_source_file with no matching documents."""
-        deleted_count = await cosmos_service.delete_by_source_file(
-            f"nonexistent/{uuid4().hex}.pdf"
-        )
+        deleted_count = await cosmos_service.delete_by_source_file(f"nonexistent/{uuid4().hex}.pdf")
         assert deleted_count == 0
 
 

@@ -96,7 +96,9 @@ async def check_idempotency(
         )
 
         if docs:
-            logger.info(f"Found existing completed document with idempotency key: {idempotency_key}")
+            logger.info(
+                f"Found existing completed document with idempotency key: {idempotency_key}"
+            )
             return docs[0]
 
         return None

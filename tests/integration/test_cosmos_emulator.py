@@ -58,8 +58,7 @@ class TestCosmosEmulatorBasicCRUD:
     async def test_get_nonexistent_document(self, cosmos_emulator_service):
         """Test getting a document that doesn't exist."""
         result = await cosmos_emulator_service.get_document(
-            f"nonexistent_{uuid4().hex}",
-            "nonexistent/file.pdf"
+            f"nonexistent_{uuid4().hex}", "nonexistent/file.pdf"
         )
         assert result is None
 
@@ -83,9 +82,7 @@ class TestCosmosEmulatorBasicCRUD:
         assert deleted is True
 
         # Verify deleted
-        result = await cosmos_emulator_service.get_document(
-            emulator_test_id, emulator_source_file
-        )
+        result = await cosmos_emulator_service.get_document(emulator_test_id, emulator_source_file)
         assert result is None
 
     @pytest.mark.asyncio

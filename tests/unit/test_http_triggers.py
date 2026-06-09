@@ -104,9 +104,7 @@ def mock_pdf_service():
         service.get_page_count = MagicMock(return_value=2)
         # Return single chunk (no splitting needed for 2-page PDF)
         service.split_pdf = MagicMock(
-            return_value=[
-                (b"chunk1_bytes", {"start_page": 1, "end_page": 2, "form_number": 1})
-            ]
+            return_value=[(b"chunk1_bytes", {"start_page": 1, "end_page": 2, "form_number": 1})]
         )
         mock.return_value = service
         yield service
@@ -117,7 +115,12 @@ class TestProcessDocument:
 
     @pytest.mark.asyncio
     async def test_process_document_success(
-        self, mock_config, mock_document_service, mock_cosmos_service, mock_blob_service, mock_pdf_service
+        self,
+        mock_config,
+        mock_document_service,
+        mock_cosmos_service,
+        mock_blob_service,
+        mock_pdf_service,
     ):
         """Test successful document processing."""
         from function_app import process_document
@@ -187,7 +190,12 @@ class TestProcessDocument:
 
     @pytest.mark.asyncio
     async def test_process_document_rate_limit_error(
-        self, mock_config, mock_document_service, mock_cosmos_service, mock_blob_service, mock_pdf_service
+        self,
+        mock_config,
+        mock_document_service,
+        mock_cosmos_service,
+        mock_blob_service,
+        mock_pdf_service,
     ):
         """Test rate limit error handling."""
         from function_app import process_document
@@ -211,7 +219,12 @@ class TestProcessDocument:
 
     @pytest.mark.asyncio
     async def test_process_document_processing_error(
-        self, mock_config, mock_document_service, mock_cosmos_service, mock_blob_service, mock_pdf_service
+        self,
+        mock_config,
+        mock_document_service,
+        mock_cosmos_service,
+        mock_blob_service,
+        mock_pdf_service,
     ):
         """Test document processing error handling."""
         from function_app import process_document
@@ -239,7 +252,12 @@ class TestProcessDocument:
 
     @pytest.mark.asyncio
     async def test_process_document_cosmos_error(
-        self, mock_config, mock_document_service, mock_cosmos_service, mock_blob_service, mock_pdf_service
+        self,
+        mock_config,
+        mock_document_service,
+        mock_cosmos_service,
+        mock_blob_service,
+        mock_pdf_service,
     ):
         """Test Cosmos DB error handling."""
         from function_app import process_document
@@ -265,7 +283,12 @@ class TestProcessDocument:
 
     @pytest.mark.asyncio
     async def test_process_document_uses_default_model(
-        self, mock_config, mock_document_service, mock_cosmos_service, mock_blob_service, mock_pdf_service
+        self,
+        mock_config,
+        mock_document_service,
+        mock_cosmos_service,
+        mock_blob_service,
+        mock_pdf_service,
     ):
         """Test that default model ID is used when not specified."""
         from function_app import process_document
@@ -448,10 +471,11 @@ class TestHealthReadiness:
         """Test readiness probe when all dependencies configured."""
         from function_app import health_readiness
 
-        with patch("function_app.get_config") as mock_config_fn, \
-             patch("function_app.get_blob_service") as mock_blob_fn, \
-             patch("function_app.get_cosmos_service") as mock_cosmos_fn:
-
+        with (
+            patch("function_app.get_config") as mock_config_fn,
+            patch("function_app.get_blob_service") as mock_blob_fn,
+            patch("function_app.get_cosmos_service") as mock_cosmos_fn,
+        ):
             config = MagicMock()
             config.doc_intel_endpoint = "https://doc-intel.cognitiveservices.azure.com"
             config.doc_intel_api_key = "test-key"
@@ -481,10 +505,11 @@ class TestHealthReadiness:
         """Test readiness probe when storage not configured."""
         from function_app import health_readiness
 
-        with patch("function_app.get_config") as mock_config_fn, \
-             patch("function_app.get_blob_service") as mock_blob_fn, \
-             patch("function_app.get_cosmos_service") as mock_cosmos_fn:
-
+        with (
+            patch("function_app.get_config") as mock_config_fn,
+            patch("function_app.get_blob_service") as mock_blob_fn,
+            patch("function_app.get_cosmos_service") as mock_cosmos_fn,
+        ):
             config = MagicMock()
             config.doc_intel_endpoint = "https://doc-intel.cognitiveservices.azure.com"
             config.doc_intel_api_key = "test-key"
@@ -510,10 +535,11 @@ class TestHealthReadiness:
         """Test readiness probe when Cosmos DB not configured."""
         from function_app import health_readiness
 
-        with patch("function_app.get_config") as mock_config_fn, \
-             patch("function_app.get_blob_service") as mock_blob_fn, \
-             patch("function_app.get_cosmos_service") as mock_cosmos_fn:
-
+        with (
+            patch("function_app.get_config") as mock_config_fn,
+            patch("function_app.get_blob_service") as mock_blob_fn,
+            patch("function_app.get_cosmos_service") as mock_cosmos_fn,
+        ):
             config = MagicMock()
             config.doc_intel_endpoint = "https://doc-intel.cognitiveservices.azure.com"
             config.doc_intel_api_key = "test-key"
@@ -540,10 +566,11 @@ class TestHealthReadiness:
         """Test readiness probe when Document Intelligence not configured."""
         from function_app import health_readiness
 
-        with patch("function_app.get_config") as mock_config_fn, \
-             patch("function_app.get_blob_service") as mock_blob_fn, \
-             patch("function_app.get_cosmos_service") as mock_cosmos_fn:
-
+        with (
+            patch("function_app.get_config") as mock_config_fn,
+            patch("function_app.get_blob_service") as mock_blob_fn,
+            patch("function_app.get_cosmos_service") as mock_cosmos_fn,
+        ):
             config = MagicMock()
             config.doc_intel_endpoint = None  # Not configured
             config.doc_intel_api_key = None
@@ -570,10 +597,11 @@ class TestHealthReadiness:
         """Test readiness deep check with storage connectivity."""
         from function_app import health_readiness
 
-        with patch("function_app.get_config") as mock_config_fn, \
-             patch("function_app.get_blob_service") as mock_blob_fn, \
-             patch("function_app.get_cosmos_service") as mock_cosmos_fn:
-
+        with (
+            patch("function_app.get_config") as mock_config_fn,
+            patch("function_app.get_blob_service") as mock_blob_fn,
+            patch("function_app.get_cosmos_service") as mock_cosmos_fn,
+        ):
             config = MagicMock()
             config.doc_intel_endpoint = "https://doc-intel.cognitiveservices.azure.com"
             config.doc_intel_api_key = "test-key"
@@ -603,10 +631,11 @@ class TestHealthReadiness:
         """Test readiness deep check with storage connectivity failure."""
         from function_app import health_readiness
 
-        with patch("function_app.get_config") as mock_config_fn, \
-             patch("function_app.get_blob_service") as mock_blob_fn, \
-             patch("function_app.get_cosmos_service") as mock_cosmos_fn:
-
+        with (
+            patch("function_app.get_config") as mock_config_fn,
+            patch("function_app.get_blob_service") as mock_blob_fn,
+            patch("function_app.get_cosmos_service") as mock_cosmos_fn,
+        ):
             config = MagicMock()
             config.doc_intel_endpoint = "https://doc-intel.cognitiveservices.azure.com"
             config.doc_intel_api_key = "test-key"
@@ -634,12 +663,14 @@ class TestHealthReadiness:
     async def test_readiness_deep_check_cosmos_not_found(self):
         """Test readiness deep check with Cosmos returning not found (expected)."""
         from function_app import health_readiness
+
         from services.cosmos_service import CosmosError
 
-        with patch("function_app.get_config") as mock_config_fn, \
-             patch("function_app.get_blob_service") as mock_blob_fn, \
-             patch("function_app.get_cosmos_service") as mock_cosmos_fn:
-
+        with (
+            patch("function_app.get_config") as mock_config_fn,
+            patch("function_app.get_blob_service") as mock_blob_fn,
+            patch("function_app.get_cosmos_service") as mock_cosmos_fn,
+        ):
             config = MagicMock()
             config.doc_intel_endpoint = "https://doc-intel.cognitiveservices.azure.com"
             config.doc_intel_api_key = "test-key"
@@ -687,14 +718,15 @@ class TestReprocessDocument:
     @pytest.fixture
     def mock_services(self):
         """Set up all mock services for reprocess tests."""
-        with patch("function_app.get_config") as mock_config_fn, \
-             patch("function_app.get_cosmos_service") as mock_cosmos_fn, \
-             patch("function_app.get_blob_service") as mock_blob_fn, \
-             patch("function_app.get_document_service") as mock_doc_fn, \
-             patch("function_app.get_pdf_service") as mock_pdf_fn, \
-             patch("function_app.get_telemetry_service") as mock_telemetry_fn, \
-             patch("function_app.get_webhook_service") as mock_webhook_fn:
-
+        with (
+            patch("function_app.get_config") as mock_config_fn,
+            patch("function_app.get_cosmos_service") as mock_cosmos_fn,
+            patch("function_app.get_blob_service") as mock_blob_fn,
+            patch("function_app.get_document_service") as mock_doc_fn,
+            patch("function_app.get_pdf_service") as mock_pdf_fn,
+            patch("function_app.get_telemetry_service") as mock_telemetry_fn,
+            patch("function_app.get_webhook_service") as mock_webhook_fn,
+        ):
             config = MagicMock()
             config.default_model_id = "prebuilt-layout"
             config.max_retry_attempts = 3
@@ -704,9 +736,11 @@ class TestReprocessDocument:
             mock_config_fn.return_value = config
 
             cosmos = AsyncMock()
-            cosmos.query_by_source_file = AsyncMock(return_value=[
-                {"id": "doc1", "sourceFile": "test.pdf", "status": "failed", "retryCount": 0}
-            ])
+            cosmos.query_by_source_file = AsyncMock(
+                return_value=[
+                    {"id": "doc1", "sourceFile": "test.pdf", "status": "failed", "retryCount": 0}
+                ]
+            )
             cosmos.save_document_result = AsyncMock()
             cosmos.increment_retry_count = AsyncMock()
             cosmos.query_documents = AsyncMock(return_value=[])  # No duplicates
@@ -721,13 +755,15 @@ class TestReprocessDocument:
             mock_blob_fn.return_value = blob
 
             doc = AsyncMock()
-            doc.analyze_document = AsyncMock(return_value={
-                "modelId": "prebuilt-layout",
-                "status": "completed",
-                "modelConfidence": 0.95,
-                "fields": {},
-                "confidence": {},
-            })
+            doc.analyze_document = AsyncMock(
+                return_value={
+                    "modelId": "prebuilt-layout",
+                    "status": "completed",
+                    "modelConfidence": 0.95,
+                    "fields": {},
+                    "confidence": {},
+                }
+            )
             doc.validate_model = AsyncMock()
             mock_doc_fn.return_value = doc
 
@@ -736,7 +772,9 @@ class TestReprocessDocument:
             mock_pdf_fn.return_value = pdf
 
             telemetry = MagicMock()
-            telemetry.track_operation = MagicMock(return_value=MagicMock(__enter__=MagicMock(return_value={}), __exit__=MagicMock()))
+            telemetry.track_operation = MagicMock(
+                return_value=MagicMock(__enter__=MagicMock(return_value={}), __exit__=MagicMock())
+            )
             telemetry.track_dead_letter = MagicMock()
             mock_telemetry_fn.return_value = telemetry
 
@@ -954,9 +992,7 @@ class TestEstimateCost:
         """Test cost estimation with page count."""
         from function_app import estimate_cost
 
-        req = create_mock_request(
-            body={"pageCount": 10, "modelId": "prebuilt-layout"}
-        )
+        req = create_mock_request(body={"pageCount": 10, "modelId": "prebuilt-layout"})
 
         response = await estimate_cost(req)
 
@@ -972,9 +1008,7 @@ class TestEstimateCost:
         """Test cost estimation with custom model."""
         from function_app import estimate_cost
 
-        req = create_mock_request(
-            body={"pageCount": 20, "modelId": "custom-invoice-model"}
-        )
+        req = create_mock_request(body={"pageCount": 20, "modelId": "custom-invoice-model"})
 
         response = await estimate_cost(req)
 
@@ -1031,14 +1065,15 @@ class TestBatchProcess:
     @pytest.fixture
     def mock_batch_services(self):
         """Set up mocks for batch processing."""
-        with patch("function_app.get_config") as mock_config_fn, \
-             patch("function_app.get_blob_service") as mock_blob_fn, \
-             patch("function_app.get_document_service") as mock_doc_fn, \
-             patch("function_app.get_cosmos_service") as mock_cosmos_fn, \
-             patch("function_app.get_pdf_service") as mock_pdf_fn, \
-             patch("function_app.get_telemetry_service") as mock_telemetry_fn, \
-             patch("function_app.get_webhook_service") as mock_webhook_fn:
-
+        with (
+            patch("function_app.get_config") as mock_config_fn,
+            patch("function_app.get_blob_service") as mock_blob_fn,
+            patch("function_app.get_document_service") as mock_doc_fn,
+            patch("function_app.get_cosmos_service") as mock_cosmos_fn,
+            patch("function_app.get_pdf_service") as mock_pdf_fn,
+            patch("function_app.get_telemetry_service") as mock_telemetry_fn,
+            patch("function_app.get_webhook_service") as mock_webhook_fn,
+        ):
             config = MagicMock()
             config.default_model_id = "prebuilt-layout"
             config.webhook_url = None
@@ -1054,13 +1089,15 @@ class TestBatchProcess:
             mock_blob_fn.return_value = blob
 
             doc = AsyncMock()
-            doc.analyze_document = AsyncMock(return_value={
-                "modelId": "prebuilt-layout",
-                "status": "completed",
-                "modelConfidence": 0.9,
-                "fields": {},
-                "confidence": {},
-            })
+            doc.analyze_document = AsyncMock(
+                return_value={
+                    "modelId": "prebuilt-layout",
+                    "status": "completed",
+                    "modelConfidence": 0.9,
+                    "fields": {},
+                    "confidence": {},
+                }
+            )
             mock_doc_fn.return_value = doc
 
             cosmos = AsyncMock()
@@ -1073,7 +1110,9 @@ class TestBatchProcess:
             mock_pdf_fn.return_value = pdf
 
             telemetry = MagicMock()
-            telemetry.track_operation = MagicMock(return_value=MagicMock(__enter__=MagicMock(return_value={}), __exit__=MagicMock()))
+            telemetry.track_operation = MagicMock(
+                return_value=MagicMock(__enter__=MagicMock(return_value={}), __exit__=MagicMock())
+            )
             telemetry.track_batch_processing = MagicMock()
             mock_telemetry_fn.return_value = telemetry
 
@@ -1122,7 +1161,11 @@ class TestBatchProcess:
         from function_app import batch_process
 
         req = create_mock_request(
-            body={"blobs": [{"blobUrl": f"https://test/{i}.pdf", "blobName": f"{i}.pdf"} for i in range(51)]}
+            body={
+                "blobs": [
+                    {"blobUrl": f"https://test/{i}.pdf", "blobName": f"{i}.pdf"} for i in range(51)
+                ]
+            }
         )
 
         response = await batch_process(req)
@@ -1162,9 +1205,7 @@ class TestProcessMultiModel:
         """Test multi-model processing without model mapping."""
         from function_app import process_multi_model
 
-        req = create_mock_request(
-            body={"blobUrl": "https://test.pdf", "blobName": "test.pdf"}
-        )
+        req = create_mock_request(body={"blobUrl": "https://test.pdf", "blobName": "test.pdf"})
 
         response = await process_multi_model(req)
 
@@ -1190,14 +1231,15 @@ class TestProcessPdfInternal:
     @pytest.fixture
     def mock_all_services(self):
         """Mock all services for internal processing tests."""
-        with patch("function_app.get_config") as mock_config_fn, \
-             patch("function_app.get_blob_service") as mock_blob_fn, \
-             patch("function_app.get_document_service") as mock_doc_fn, \
-             patch("function_app.get_cosmos_service") as mock_cosmos_fn, \
-             patch("function_app.get_pdf_service") as mock_pdf_fn, \
-             patch("function_app.get_telemetry_service") as mock_telemetry_fn, \
-             patch("function_app.get_webhook_service") as mock_webhook_fn:
-
+        with (
+            patch("function_app.get_config") as mock_config_fn,
+            patch("function_app.get_blob_service") as mock_blob_fn,
+            patch("function_app.get_document_service") as mock_doc_fn,
+            patch("function_app.get_cosmos_service") as mock_cosmos_fn,
+            patch("function_app.get_pdf_service") as mock_pdf_fn,
+            patch("function_app.get_telemetry_service") as mock_telemetry_fn,
+            patch("function_app.get_webhook_service") as mock_webhook_fn,
+        ):
             config = MagicMock()
             config.webhook_url = None
             config.pages_per_form = 2
@@ -1212,14 +1254,16 @@ class TestProcessPdfInternal:
             mock_blob_fn.return_value = blob
 
             doc = AsyncMock()
-            doc.analyze_document = AsyncMock(return_value={
-                "modelId": "custom-model",
-                "status": "completed",
-                "modelConfidence": 0.95,
-                "docType": "invoice",
-                "fields": {"vendor": "Test"},
-                "confidence": {"vendor": 0.98},
-            })
+            doc.analyze_document = AsyncMock(
+                return_value={
+                    "modelId": "custom-model",
+                    "status": "completed",
+                    "modelConfidence": 0.95,
+                    "docType": "invoice",
+                    "fields": {"vendor": "Test"},
+                    "confidence": {"vendor": 0.98},
+                }
+            )
             mock_doc_fn.return_value = doc
 
             cosmos = AsyncMock()
@@ -1231,7 +1275,9 @@ class TestProcessPdfInternal:
             mock_pdf_fn.return_value = pdf
 
             telemetry = MagicMock()
-            telemetry.track_operation = MagicMock(return_value=MagicMock(__enter__=MagicMock(return_value={}), __exit__=MagicMock()))
+            telemetry.track_operation = MagicMock(
+                return_value=MagicMock(__enter__=MagicMock(return_value={}), __exit__=MagicMock())
+            )
             telemetry.track_form_processed = MagicMock()
             mock_telemetry_fn.return_value = telemetry
 
@@ -1240,8 +1286,13 @@ class TestProcessPdfInternal:
             mock_webhook_fn.return_value = webhook
 
             yield {
-                "config": config, "blob": blob, "doc": doc, "cosmos": cosmos,
-                "pdf": pdf, "telemetry": telemetry, "webhook": webhook
+                "config": config,
+                "blob": blob,
+                "doc": doc,
+                "cosmos": cosmos,
+                "pdf": pdf,
+                "telemetry": telemetry,
+                "webhook": webhook,
             }
 
     @pytest.mark.asyncio
@@ -1305,11 +1356,14 @@ class TestProcessPdfInternal:
     async def test_process_blob_service_not_configured(self):
         """Test processing when blob service not configured."""
         from function_app import process_pdf_internal
+
         from services.blob_service import BlobServiceError
 
-        with patch("function_app.get_blob_service") as mock_blob, \
-             patch("function_app.get_config"), \
-             patch("function_app.get_telemetry_service"):
+        with (
+            patch("function_app.get_blob_service") as mock_blob,
+            patch("function_app.get_config"),
+            patch("function_app.get_telemetry_service"),
+        ):
             mock_blob.return_value = None
 
             with pytest.raises(BlobServiceError):
@@ -1327,14 +1381,13 @@ class TestErrorHandlers:
     async def test_configuration_error(self):
         """Test ConfigurationError handling in process_document."""
         from function_app import process_document
+
         from config import ConfigurationError
 
         with patch("function_app.get_config") as mock_config:
             mock_config.side_effect = ConfigurationError(["DOC_INTEL_ENDPOINT"])
 
-            req = create_mock_request(
-                body={"blobUrl": "https://test.pdf", "blobName": "test.pdf"}
-            )
+            req = create_mock_request(body={"blobUrl": "https://test.pdf", "blobName": "test.pdf"})
 
             response = await process_document(req)
 
@@ -1348,6 +1401,7 @@ class TestErrorHandlers:
     ):
         """Test PdfSplitError handling."""
         from function_app import process_document
+
         from services.pdf_service import PdfSplitError
 
         with patch("function_app.get_pdf_service") as mock_pdf:
@@ -1355,9 +1409,7 @@ class TestErrorHandlers:
             pdf_service.get_page_count.side_effect = PdfSplitError("Invalid PDF")
             mock_pdf.return_value = pdf_service
 
-            req = create_mock_request(
-                body={"blobUrl": "https://test.pdf", "blobName": "test.pdf"}
-            )
+            req = create_mock_request(body={"blobUrl": "https://test.pdf", "blobName": "test.pdf"})
 
             response = await process_document(req)
 
@@ -1366,9 +1418,12 @@ class TestErrorHandlers:
             assert "split PDF" in body["error"]
 
     @pytest.mark.asyncio
-    async def test_blob_service_error(self, mock_config, mock_document_service, mock_cosmos_service):
+    async def test_blob_service_error(
+        self, mock_config, mock_document_service, mock_cosmos_service
+    ):
         """Test BlobServiceError handling."""
         from function_app import process_document
+
         from services.blob_service import BlobServiceError
 
         with patch("function_app.get_blob_service") as mock_blob:
@@ -1376,9 +1431,7 @@ class TestErrorHandlers:
             blob_service.download_blob.side_effect = BlobServiceError("Connection failed")
             mock_blob.return_value = blob_service
 
-            req = create_mock_request(
-                body={"blobUrl": "https://test.pdf", "blobName": "test.pdf"}
-            )
+            req = create_mock_request(body={"blobUrl": "https://test.pdf", "blobName": "test.pdf"})
 
             response = await process_document(req)
 
@@ -1394,9 +1447,7 @@ class TestErrorHandlers:
         with patch("function_app.get_blob_service") as mock_blob:
             mock_blob.side_effect = RuntimeError("Unexpected!")
 
-            req = create_mock_request(
-                body={"blobUrl": "https://test.pdf", "blobName": "test.pdf"}
-            )
+            req = create_mock_request(body={"blobUrl": "https://test.pdf", "blobName": "test.pdf"})
 
             response = await process_document(req)
 
@@ -1412,9 +1463,12 @@ class TestGetDocumentStatusErrors:
     async def test_get_status_cosmos_error(self, mock_cosmos_service):
         """Test GetDocumentStatus with CosmosError."""
         from function_app import get_document_status
+
         from services.cosmos_service import CosmosError
 
-        mock_cosmos_service.get_document.side_effect = CosmosError("get_document", "Connection failed")
+        mock_cosmos_service.get_document.side_effect = CosmosError(
+            "get_document", "Connection failed"
+        )
 
         req = create_mock_request(
             method="GET",
@@ -1455,6 +1509,7 @@ class TestGetBatchStatusErrors:
     async def test_batch_status_cosmos_error(self, mock_cosmos_service):
         """Test GetBatchStatus with CosmosError."""
         from function_app import get_batch_status
+
         from services.cosmos_service import CosmosError
 
         mock_cosmos_service.query_by_source_file.side_effect = CosmosError("query", "Query failed")
@@ -1498,6 +1553,7 @@ class TestDeleteDocumentErrors:
     async def test_delete_split_blob_error(self, mock_cosmos_service, mock_blob_service):
         """Test delete with split blob deletion error."""
         from function_app import delete_document
+
         from services.blob_service import BlobServiceError
 
         mock_cosmos_service.delete_by_source_file = AsyncMock(return_value=2)
@@ -1522,6 +1578,7 @@ class TestDeleteDocumentErrors:
     async def test_delete_list_blobs_error(self, mock_cosmos_service, mock_blob_service):
         """Test delete with list blobs error."""
         from function_app import delete_document
+
         from services.blob_service import BlobServiceError
 
         mock_cosmos_service.delete_by_source_file = AsyncMock(return_value=2)
@@ -1567,6 +1624,7 @@ class TestDeleteDocumentErrors:
     async def test_delete_original_error(self, mock_cosmos_service, mock_blob_service):
         """Test delete with original blob deletion error."""
         from function_app import delete_document
+
         from services.blob_service import BlobServiceError
 
         mock_cosmos_service.delete_by_source_file = AsyncMock(return_value=1)
@@ -1591,9 +1649,12 @@ class TestDeleteDocumentErrors:
     async def test_delete_cosmos_error(self, mock_cosmos_service):
         """Test delete with CosmosError."""
         from function_app import delete_document
+
         from services.cosmos_service import CosmosError
 
-        mock_cosmos_service.delete_by_source_file.side_effect = CosmosError("delete", "Delete failed")
+        mock_cosmos_service.delete_by_source_file.side_effect = CosmosError(
+            "delete", "Delete failed"
+        )
 
         req = create_mock_request(
             method="DELETE",
@@ -1635,9 +1696,11 @@ class TestReprocessErrors:
         """Test reprocess with unexpected exception."""
         from function_app import reprocess_document
 
-        with patch("function_app.get_config") as mock_config, \
-             patch("function_app.get_blob_service") as mock_blob, \
-             patch("function_app.get_cosmos_service") as mock_cosmos:
+        with (
+            patch("function_app.get_config") as mock_config,
+            patch("function_app.get_blob_service") as mock_blob,
+            patch("function_app.get_cosmos_service") as mock_cosmos,
+        ):
             config = MagicMock()
             config.default_model_id = "prebuilt-layout"
             config.max_retry_attempts = 3
@@ -1676,13 +1739,14 @@ class TestProcessMultiModelComplete:
     @pytest.fixture
     def mock_all_services(self):
         """Mock all services needed for multi-model processing."""
-        with patch("function_app.get_config") as mock_config, \
-             patch("function_app.get_blob_service") as mock_blob, \
-             patch("function_app.get_pdf_service") as mock_pdf, \
-             patch("function_app.get_document_service") as mock_doc, \
-             patch("function_app.get_cosmos_service") as mock_cosmos, \
-             patch("function_app.get_webhook_service") as mock_webhook:
-
+        with (
+            patch("function_app.get_config") as mock_config,
+            patch("function_app.get_blob_service") as mock_blob,
+            patch("function_app.get_pdf_service") as mock_pdf,
+            patch("function_app.get_document_service") as mock_doc,
+            patch("function_app.get_cosmos_service") as mock_cosmos,
+            patch("function_app.get_webhook_service") as mock_webhook,
+        ):
             config = MagicMock()
             config.default_model_id = "prebuilt-layout"
             mock_config.return_value = config
@@ -1691,7 +1755,9 @@ class TestProcessMultiModelComplete:
             blob_service.download_blob.return_value = b"PDF content"
             blob_service.parse_blob_url.return_value = ("pdfs", "test.pdf")
             blob_service.upload_blob.return_value = "https://storage/pdfs/_splits/chunk.pdf"
-            blob_service.generate_sas_url.return_value = "https://storage/pdfs/_splits/chunk.pdf?sas=token"
+            blob_service.generate_sas_url.return_value = (
+                "https://storage/pdfs/_splits/chunk.pdf?sas=token"
+            )
             mock_blob.return_value = blob_service
 
             pdf_service = MagicMock()
@@ -1852,8 +1918,10 @@ class TestProcessMultiModelComplete:
         """Test multi-model when storage not configured."""
         from function_app import process_multi_model
 
-        with patch("function_app.get_config") as mock_config, \
-             patch("function_app.get_blob_service") as mock_blob:
+        with (
+            patch("function_app.get_config") as mock_config,
+            patch("function_app.get_blob_service") as mock_blob,
+        ):
             mock_config.return_value = MagicMock()
             mock_blob.return_value = None
 
@@ -1876,8 +1944,10 @@ class TestProcessMultiModelComplete:
         """Test multi-model with top-level exception."""
         from function_app import process_multi_model
 
-        with patch("function_app.get_config") as mock_config, \
-             patch("function_app.get_blob_service") as mock_blob:
+        with (
+            patch("function_app.get_config") as mock_config,
+            patch("function_app.get_blob_service") as mock_blob,
+        ):
             mock_config.return_value = MagicMock()
             mock_blob.side_effect = RuntimeError("Service unavailable")
 

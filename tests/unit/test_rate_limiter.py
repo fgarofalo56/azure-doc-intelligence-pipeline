@@ -1,6 +1,5 @@
 """Unit tests for the rate limiter service."""
 
-import asyncio
 import time
 from unittest.mock import patch
 

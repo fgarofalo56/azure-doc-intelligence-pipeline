@@ -217,7 +217,7 @@ class TestMockQueueClient:
         """Test send failure."""
         queue = create_mock_queue_client(send_should_fail=True)
 
-        with pytest.raises(Exception):
+        with pytest.raises(Exception):  # noqa: B017
             queue.send_message("test")
 
     def test_receive_messages(self) -> None:

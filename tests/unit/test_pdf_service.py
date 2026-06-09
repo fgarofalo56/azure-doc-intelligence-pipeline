@@ -12,7 +12,7 @@ from services.pdf_service import FormBoundary, PdfService
 def create_test_pdf(num_pages: int) -> bytes:
     """Create a test PDF with specified number of pages."""
     writer = PdfWriter()
-    for i in range(num_pages):
+    for _ in range(num_pages):
         writer.add_blank_page(width=612, height=792)  # Letter size
 
     output = io.BytesIO()
@@ -261,9 +261,7 @@ class TestFormBoundary:
 
     def test_form_boundary_all_fields_required(self):
         """Test FormBoundary requires all fields."""
-        boundary = FormBoundary(
-            start_page=1, end_page=3, confidence=1.0, detection_method="fixed"
-        )
+        boundary = FormBoundary(start_page=1, end_page=3, confidence=1.0, detection_method="fixed")
         assert boundary.start_page == 1
         assert boundary.end_page == 3
         assert boundary.confidence == 1.0
@@ -443,9 +441,7 @@ class TestSmartFormDetection:
 
     def test_detect_boundaries_from_headers_single(self, pdf_service):
         """Test no boundaries with single page."""
-        boundaries = pdf_service._detect_boundaries_from_headers(
-            ["Header"], 0.7, 0.5, 1
-        )
+        boundaries = pdf_service._detect_boundaries_from_headers(["Header"], 0.7, 0.5, 1)
         assert boundaries == []
 
     def test_detect_boundaries_from_headers_no_match(self, pdf_service):

@@ -372,10 +372,7 @@ class CosmosService:
         ]
 
         if status:
-            query = (
-                "SELECT TOP @limit * FROM c "
-                "WHERE c.tenantId = @tenantId AND c.status = @status"
-            )
+            query = "SELECT TOP @limit * FROM c WHERE c.tenantId = @tenantId AND c.status = @status"
             parameters.append({"name": "@status", "value": status})
 
         query += " ORDER BY c.processedAt DESC"
