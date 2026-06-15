@@ -223,7 +223,7 @@ jobs:
           path: ${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}
 
       - name: Login to Azure
-        uses: azure/login@v2
+        uses: azure/login@v3
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
@@ -248,7 +248,7 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Login to Azure
-        uses: azure/login@v2
+        uses: azure/login@v3
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
